@@ -9,20 +9,20 @@ import type {
   SandboxAdapter,
   SandboxInfo,
   SandboxProvider,
-  SandboxState,
   TerminalInfo,
   TerminalOptions,
   VolumeConfig,
   VolumeInfo,
   VolumeProvider,
 } from './types.js'
+import { CapabilityNotSupportedError } from './errors.js'
 import { readFileViaExec, writeFileViaExec } from './file-helpers.js'
 
 /**
  * 将 AdapterSandbox 包装为完整的 Sandbox 接口。
  * 自动补充缺失的 writeFile/readFile 默认实现。
  */
-function wrapSandbox(raw: AdapterSandbox): Sandbox {
+function wrapSandbox(raw: AdapterSandbox, providerName: string): Sandbox {
   const sandbox: Sandbox & Record<string, unknown> = {
     get id() { return raw.id },
     get state() { return raw.state },
@@ -42,18 +42,18 @@ function wrapSandbox(raw: AdapterSandbox): Sandbox {
       return readFileViaExec(raw, path)
     },
 
-    uploadArchive(archive: Uint8Array | ReadableStream, destDir?: string): Promise<void> {
-      if (raw.uploadArchive) return raw.uploadArchive(archive, destDir)
-      throw new Error('uploadArchive not supported by this provider')
+    uploadArchive(_archive: Uint8Array | ReadableStream, _destDir?: string): Promise<void> {
+      if (raw.uploadArchive) return raw.uploadArchive(_archive, _destDir)
+      throw new CapabilityNotSupportedError(providerName, 'snapshot')
     },
 
-    downloadArchive(srcDir?: string): Promise<ReadableStream> {
-      if (raw.downloadArchive) return raw.downloadArchive(srcDir)
-      throw new Error('downloadArchive not supported by this provider')
+    downloadArchive(_srcDir?: string): Promise<ReadableStream> {
+      if (raw.downloadArchive) return raw.downloadArchive(_srcDir)
+      throw new CapabilityNotSupportedError(providerName, 'snapshot')
     },
   }
 
-  // 转发可选能力方法
+  // 转发可选能力方法（只有 adapter 真正实现的才转发）
   if (raw.execStream) {
     sandbox['execStream'] = raw.execStream.bind(raw)
   }
@@ -83,12 +83,40 @@ function wrapSandbox(raw: AdapterSandbox): Sandbox {
   return sandbox
 }
 
+/** 能力到 AdapterSandbox 方法的映射 */
+const CAPABILITY_METHOD_MAP: Record<Capability, string> = {
+  'exec.stream': 'execStream',
+  'terminal': 'startTerminal',
+  'sleep': 'sleep',
+  'volumes': '',       // checked at adapter level, not sandbox level
+  'snapshot': 'createSnapshot',
+  'port.expose': 'exposePort',
+}
+
 /**
- * 自动检测 adapter 实际支持的能力。
- * adapter 的 capabilities 声明为准，但这里做一个简单的交叉检查。
+ * 交叉验证 adapter 声明的能力。
+ *
+ * 对于 sandbox 级别的能力（exec.stream, terminal, sleep, snapshot, port.expose），
+ * 我们无法在不创建沙箱的情况下验证方法是否存在，所以信任 adapter 的声明。
+ *
+ * 对于 provider 级别的能力（volumes），直接检查 adapter 上的方法。
  */
 function detectCapabilities(adapter: SandboxAdapter): ReadonlySet<Capability> {
-  return adapter.capabilities
+  const validated = new Set<Capability>()
+
+  for (const cap of adapter.capabilities) {
+    if (cap === 'volumes') {
+      // volumes 是 provider 级别能力，可以直接验证
+      if (adapter.createVolume && adapter.deleteVolume && adapter.listVolumes) {
+        validated.add(cap)
+      }
+    } else {
+      // sandbox 级别能力，信任 adapter 声明
+      validated.add(cap)
+    }
+  }
+
+  return validated
 }
 
 /** 创建一个 SandboxProvider */
@@ -101,12 +129,12 @@ export function createProvider(adapter: SandboxAdapter): SandboxProvider {
 
     async create(config: CreateConfig): Promise<Sandbox> {
       const raw = await adapter.createSandbox(config)
-      return wrapSandbox(raw)
+      return wrapSandbox(raw, adapter.name)
     },
 
     async get(id: string): Promise<Sandbox> {
       const raw = await adapter.getSandbox(id)
-      return wrapSandbox(raw)
+      return wrapSandbox(raw, adapter.name)
     },
 
     async list(filter?: ListFilter): Promise<SandboxInfo[]> {
@@ -119,7 +147,7 @@ export function createProvider(adapter: SandboxAdapter): SandboxProvider {
   }
 
   // 如果 adapter 支持 volume 操作，扩展为 VolumeProvider
-  if (adapter.createVolume && adapter.deleteVolume && adapter.listVolumes) {
+  if (capabilities.has('volumes') && adapter.createVolume && adapter.deleteVolume && adapter.listVolumes) {
     const volumeProvider = provider as SandboxProvider & {
       createVolume: (config: VolumeConfig) => Promise<VolumeInfo>
       deleteVolume: (id: string) => Promise<void>

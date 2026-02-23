@@ -2,9 +2,11 @@ import { describe, it, expect, afterAll } from 'vitest'
 import {
   createProvider,
   withVolumes,
+  withPortExpose,
   hasCapability,
   SandboxNotFoundError,
   ProviderError,
+  CapabilityNotSupportedError,
 } from '@sandbank/core'
 import { DaytonaAdapter } from '../src/index.js'
 
@@ -32,9 +34,9 @@ describe('DaytonaAdapter integration', () => {
   it('adapter has correct name and capabilities', () => {
     expect(adapter.name).toBe('daytona')
     expect(hasCapability(provider, 'volumes')).toBe(true)
-    expect(hasCapability(provider, 'exec.stream')).toBe(true)
     expect(hasCapability(provider, 'port.expose')).toBe(true)
     // Capabilities we don't support
+    expect(hasCapability(provider, 'exec.stream')).toBe(false)
     expect(hasCapability(provider, 'terminal')).toBe(false)
     expect(hasCapability(provider, 'sleep')).toBe(false)
     expect(hasCapability(provider, 'snapshot')).toBe(false)
@@ -205,6 +207,46 @@ describe('DaytonaAdapter integration', () => {
     for (const s of results) {
       expect(['running', 'stopped']).toContain(s.state)
     }
+  })
+
+  // ─── exposePort ───
+
+  describe('exposePort', () => {
+    it('exposePort returns a URL for a port', async () => {
+      const sandbox = await provider.get(sharedSandboxId!)
+      const portExpose = withPortExpose(sandbox)
+      expect(portExpose).not.toBeNull()
+      if (!portExpose) return
+
+      const result = await portExpose.exposePort(8080)
+      expect(result.url).toBeTruthy()
+      expect(typeof result.url).toBe('string')
+      console.log(`  exposePort(8080) → ${result.url}`)
+    })
+  })
+
+  // ─── uploadArchive / downloadArchive (unsupported) ───
+
+  describe('archive operations (unsupported)', () => {
+    it('uploadArchive throws CapabilityNotSupportedError', async () => {
+      const sandbox = await provider.get(sharedSandboxId!)
+      try {
+        await sandbox.uploadArchive(new Uint8Array([1, 2, 3]))
+        expect.fail('should have thrown')
+      } catch (err) {
+        expect(err).toBeInstanceOf(CapabilityNotSupportedError)
+      }
+    })
+
+    it('downloadArchive throws CapabilityNotSupportedError', async () => {
+      const sandbox = await provider.get(sharedSandboxId!)
+      try {
+        await sandbox.downloadArchive()
+        expect.fail('should have thrown')
+      } catch (err) {
+        expect(err).toBeInstanceOf(CapabilityNotSupportedError)
+      }
+    })
   })
 
   // ─── destroySandbox ───

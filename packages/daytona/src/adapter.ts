@@ -87,6 +87,11 @@ function wrapDaytonaSandbox(sandbox: DaytonaSandbox): AdapterSandbox {
       const buffer: Buffer = await sandbox.fs.downloadFile(path)
       return new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength)
     },
+
+    async exposePort(port: number): Promise<{ url: string }> {
+      const preview = await sandbox.getPreviewLink(port)
+      return { url: preview.url as string }
+    },
   }
 }
 
@@ -112,7 +117,6 @@ async function waitFor(fn: () => Promise<boolean>, intervalMs = 2000, maxAttempt
 export class DaytonaAdapter implements SandboxAdapter {
   readonly name = 'daytona'
   readonly capabilities: ReadonlySet<Capability> = new Set<Capability>([
-    'exec.stream',
     'volumes',
     'port.expose',
   ])

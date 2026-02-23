@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { createProvider } from '../src/provider.js'
+import { CapabilityNotSupportedError } from '../src/errors.js'
 import type { SandboxAdapter, AdapterSandbox, Capability } from '../src/types.js'
 
 function mockAdapterSandbox(overrides: Partial<AdapterSandbox> = {}): AdapterSandbox {
@@ -30,7 +31,7 @@ describe('createProvider', () => {
     const adapter = mockAdapter()
     const provider = createProvider(adapter)
     expect(provider.name).toBe('mock')
-    expect(provider.capabilities).toBe(adapter.capabilities)
+    expect(provider.capabilities.size).toBe(0)
   })
 
   it('create() returns a wrapped Sandbox', async () => {
@@ -114,8 +115,23 @@ describe('createProvider', () => {
     expect(adapter.destroySandbox).toHaveBeenCalledWith('sb-mock')
   })
 
-  it('exposes volume methods when adapter has them', async () => {
+  it('uploadArchive throws CapabilityNotSupportedError when not implemented', async () => {
+    const adapter = mockAdapter()
+    const provider = createProvider(adapter)
+    const sandbox = await provider.create({ image: 'node:22' })
+    expect(() => sandbox.uploadArchive(new Uint8Array([1]))).toThrow(CapabilityNotSupportedError)
+  })
+
+  it('downloadArchive throws CapabilityNotSupportedError when not implemented', async () => {
+    const adapter = mockAdapter()
+    const provider = createProvider(adapter)
+    const sandbox = await provider.create({ image: 'node:22' })
+    expect(() => sandbox.downloadArchive()).toThrow(CapabilityNotSupportedError)
+  })
+
+  it('exposes volume methods when adapter declares volumes capability and has methods', async () => {
     const adapter = mockAdapter({
+      capabilities: new Set<Capability>(['volumes']),
       createVolume: vi.fn(async () => ({ id: 'v1', name: 'vol', sizeGB: 1, attachedTo: null })),
       deleteVolume: vi.fn(async () => {}),
       listVolumes: vi.fn(async () => []),
@@ -124,6 +140,25 @@ describe('createProvider', () => {
     expect(typeof provider.createVolume).toBe('function')
     expect(typeof provider.deleteVolume).toBe('function')
     expect(typeof provider.listVolumes).toBe('function')
+  })
+
+  it('does not expose volume methods when adapter declares volumes but missing methods', async () => {
+    const adapter = mockAdapter({
+      capabilities: new Set<Capability>(['volumes']),
+      // No createVolume/deleteVolume/listVolumes
+    })
+    const provider = createProvider(adapter) as any
+    expect(provider.createVolume).toBeUndefined()
+  })
+
+  it('detectCapabilities trusts sandbox-level capabilities', () => {
+    const adapter = mockAdapter({
+      capabilities: new Set<Capability>(['exec.stream', 'port.expose', 'sleep']),
+    })
+    const provider = createProvider(adapter)
+    expect(provider.capabilities.has('exec.stream')).toBe(true)
+    expect(provider.capabilities.has('port.expose')).toBe(true)
+    expect(provider.capabilities.has('sleep')).toBe(true)
   })
 
   it('forwards optional capability methods on sandbox', async () => {
