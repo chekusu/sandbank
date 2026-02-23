@@ -12,18 +12,13 @@ import type {
   VolumeInfo,
 } from '@sandbank/core'
 import { SandboxNotFoundError, ProviderError } from '@sandbank/core'
+import type { Daytona as DaytonaClient, Sandbox as DaytonaSandbox } from '@daytonaio/sdk'
 
 export interface DaytonaAdapterConfig {
   apiKey: string
   apiUrl?: string
   target?: string
 }
-
-// Daytona SDK types (avoid importing the SDK at module level)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type DaytonaClient = any
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type DaytonaSandbox = any
 
 /** Map Daytona's SandboxState to our SandboxState */
 function mapState(daytonaState: string): SandboxState {
@@ -59,7 +54,7 @@ function wrapDaytonaSandbox(sandbox: DaytonaSandbox): AdapterSandbox {
   return {
     get id() { return sandbox.id as string },
     get state() { return mapState(sandbox.state as string) },
-    get createdAt() { return (sandbox.createdAt ?? new Date().toISOString()) as string },
+    get createdAt() { return ((sandbox as unknown as Record<string, unknown>)['createdAt'] ?? new Date().toISOString()) as string },
 
     async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
       const response = await sandbox.process.executeCommand(
@@ -177,11 +172,11 @@ export class DaytonaAdapter implements SandboxAdapter {
       const result = await daytona.list(undefined, undefined, filter?.limit)
       const items = result.items as DaytonaSandbox[]
 
-      let infos: SandboxInfo[] = items.map((s: DaytonaSandbox) => ({
+      let infos: SandboxInfo[] = items.map((s) => ({
         id: s.id as string,
         state: mapState(s.state as string),
-        createdAt: (s.createdAt ?? '') as string,
-        image: (s.image ?? '') as string,
+        createdAt: ((s as unknown as Record<string, unknown>)['createdAt'] ?? '') as string,
+        image: ((s as unknown as Record<string, unknown>)['image'] ?? '') as string,
       }))
 
       // Apply state filter
@@ -253,7 +248,11 @@ export class DaytonaAdapter implements SandboxAdapter {
         }
       }
 
-      await daytona.volume.delete(vol)
+      // 重新获取最新 volume 对象传给 delete
+      const refreshed = await daytona.volume.list()
+      const latest = refreshed.find((v: { id: string }) => v.id === id)
+      if (!latest) return // 已消失
+      await daytona.volume.delete(latest)
     } catch (err) {
       if (isNotFound(err)) return
       throw new ProviderError('daytona', err)

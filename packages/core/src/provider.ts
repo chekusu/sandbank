@@ -15,7 +15,7 @@ import type {
   VolumeInfo,
   VolumeProvider,
 } from './types.js'
-import { CapabilityNotSupportedError } from './errors.js'
+import { ProviderError } from './errors.js'
 import { readFileViaExec, writeFileViaExec } from './file-helpers.js'
 
 /**
@@ -44,12 +44,12 @@ function wrapSandbox(raw: AdapterSandbox, providerName: string): Sandbox {
 
     uploadArchive(_archive: Uint8Array | ReadableStream, _destDir?: string): Promise<void> {
       if (raw.uploadArchive) return raw.uploadArchive(_archive, _destDir)
-      throw new CapabilityNotSupportedError(providerName, 'snapshot')
+      throw new ProviderError(providerName, new Error('uploadArchive not supported by this provider'))
     },
 
     downloadArchive(_srcDir?: string): Promise<ReadableStream> {
       if (raw.downloadArchive) return raw.downloadArchive(_srcDir)
-      throw new CapabilityNotSupportedError(providerName, 'snapshot')
+      throw new ProviderError(providerName, new Error('downloadArchive not supported by this provider'))
     },
   }
 
