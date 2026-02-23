@@ -1,5 +1,11 @@
 import { describe, it, expect, afterAll } from 'vitest'
-import { createProvider, withVolumes, hasCapability } from '@sandbank/core'
+import {
+  createProvider,
+  withVolumes,
+  hasCapability,
+  SandboxNotFoundError,
+  ProviderError,
+} from '@sandbank/core'
 import { DaytonaAdapter } from '../src/index.js'
 
 const API_KEY = process.env['DAYTONA_API_KEY'] ?? ''
@@ -8,7 +14,7 @@ const API_URL = process.env['DAYTONA_API_URL'] ?? 'https://app.daytona.io/api'
 const adapter = new DaytonaAdapter({ apiKey: API_KEY, apiUrl: API_URL })
 const provider = createProvider(adapter)
 
-// Shared sandbox for most tests (created once, destroyed in afterAll)
+// Shared sandbox for most tests (created once, destroyed at the end)
 let sharedSandboxId: string | null = null
 const extraCleanupIds: string[] = []
 
@@ -21,14 +27,22 @@ afterAll(async () => {
 })
 
 describe('DaytonaAdapter integration', () => {
+  // ─── Adapter identity ───
+
   it('adapter has correct name and capabilities', () => {
     expect(adapter.name).toBe('daytona')
     expect(hasCapability(provider, 'volumes')).toBe(true)
     expect(hasCapability(provider, 'exec.stream')).toBe(true)
     expect(hasCapability(provider, 'port.expose')).toBe(true)
+    // Capabilities we don't support
+    expect(hasCapability(provider, 'terminal')).toBe(false)
+    expect(hasCapability(provider, 'sleep')).toBe(false)
+    expect(hasCapability(provider, 'snapshot')).toBe(false)
   })
 
-  it('create sandbox', async () => {
+  // ─── createSandbox ───
+
+  it('create sandbox with image + resources + autoDestroy', async () => {
     const sandbox = await provider.create({
       image: 'ubuntu:latest',
       resources: { cpu: 1, memory: 1, disk: 5 },
@@ -37,15 +51,38 @@ describe('DaytonaAdapter integration', () => {
     sharedSandboxId = sandbox.id
 
     expect(sandbox.id).toBeTruthy()
+    expect(typeof sandbox.id).toBe('string')
     expect(sandbox.state).toBe('running')
+    expect(sandbox.createdAt).toBeTruthy()
     console.log(`  created: ${sandbox.id}`)
   })
+
+  it('create sandbox with env vars', async () => {
+    const sandbox = await provider.create({
+      image: 'ubuntu:latest',
+      env: { MY_VAR: 'hello_sandbank', ANOTHER: '42' },
+      autoDestroyMinutes: 5,
+    })
+    extraCleanupIds.push(sandbox.id)
+
+    const result = await sandbox.exec('echo "$MY_VAR $ANOTHER"')
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('hello_sandbank')
+    expect(result.stdout).toContain('42')
+    console.log('  env vars injected ok')
+
+    await provider.destroy(sandbox.id)
+    extraCleanupIds.splice(extraCleanupIds.indexOf(sandbox.id), 1)
+  })
+
+  // ─── exec ───
 
   it('exec basic command', async () => {
     const sandbox = await provider.get(sharedSandboxId!)
     const result = await sandbox.exec('echo "hello sandbank"')
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('hello sandbank')
+    expect(typeof result.stderr).toBe('string')
   })
 
   it('exec with cwd', async () => {
@@ -61,7 +98,25 @@ describe('DaytonaAdapter integration', () => {
     expect(result.exitCode).toBe(42)
   })
 
-  it('writeFile + readFile (text, UTF-8)', async () => {
+  it('exec multiline output', async () => {
+    const sandbox = await provider.get(sharedSandboxId!)
+    const result = await sandbox.exec('echo "line1" && echo "line2" && echo "line3"')
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('line1')
+    expect(result.stdout).toContain('line2')
+    expect(result.stdout).toContain('line3')
+  })
+
+  it('exec with timeout option (should complete before timeout)', async () => {
+    const sandbox = await provider.get(sharedSandboxId!)
+    const result = await sandbox.exec('echo fast', { timeout: 30000 })
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('fast')
+  })
+
+  // ─── writeFile / readFile ───
+
+  it('writeFile + readFile (text, UTF-8 with multibyte)', async () => {
     const sandbox = await provider.get(sharedSandboxId!)
     const content = 'Sandbank SDK test — 你好世界 🌍'
     await sandbox.writeFile('/tmp/sandbank-test.txt', content)
@@ -77,46 +132,125 @@ describe('DaytonaAdapter integration', () => {
     expect(readBack).toEqual(data)
   })
 
-  it('get() retrieves existing sandbox', async () => {
+  it('writeFile + readFile (empty file)', async () => {
+    const sandbox = await provider.get(sharedSandboxId!)
+    await sandbox.writeFile('/tmp/empty.txt', '')
+    const readBack = await sandbox.readFile('/tmp/empty.txt')
+    expect(readBack.byteLength).toBe(0)
+  })
+
+  it('writeFile creates parent directories', async () => {
+    const sandbox = await provider.get(sharedSandboxId!)
+    await sandbox.writeFile('/tmp/deep/nested/dir/file.txt', 'nested')
+    const readBack = await sandbox.readFile('/tmp/deep/nested/dir/file.txt')
+    expect(new TextDecoder().decode(readBack)).toBe('nested')
+  })
+
+  it('writeFile overwrites existing file', async () => {
+    const sandbox = await provider.get(sharedSandboxId!)
+    await sandbox.writeFile('/tmp/overwrite.txt', 'first')
+    await sandbox.writeFile('/tmp/overwrite.txt', 'second')
+    const readBack = await sandbox.readFile('/tmp/overwrite.txt')
+    expect(new TextDecoder().decode(readBack)).toBe('second')
+  })
+
+  // ─── getSandbox ───
+
+  it('get() retrieves existing sandbox with correct state', async () => {
     const fetched = await provider.get(sharedSandboxId!)
     expect(fetched.id).toBe(sharedSandboxId)
     expect(fetched.state).toBe('running')
+    expect(fetched.createdAt).toBeTruthy()
+    // Can exec on fetched sandbox
     const result = await fetched.exec('echo alive')
     expect(result.stdout).toContain('alive')
   })
+
+  it('get() throws SandboxNotFoundError for non-existent ID', async () => {
+    try {
+      await provider.get('00000000-0000-0000-0000-000000000000')
+      expect.fail('should have thrown')
+    } catch (err) {
+      expect(err).toBeInstanceOf(SandboxNotFoundError)
+      const snfErr = err as SandboxNotFoundError
+      expect(snfErr.provider).toBe('daytona')
+      expect(snfErr.sandboxId).toBe('00000000-0000-0000-0000-000000000000')
+    }
+  })
+
+  // ─── listSandboxes ───
 
   it('list() includes the sandbox', async () => {
     const infos = await provider.list()
     const found = infos.find(s => s.id === sharedSandboxId)
     expect(found).toBeDefined()
     expect(found!.state).toBe('running')
+    expect(found!.id).toBe(sharedSandboxId)
   })
 
-  it('destroy shared sandbox', async () => {
+  it('list() with state filter returns only matching sandboxes', async () => {
+    const running = await provider.list({ state: 'running' })
+    expect(running.length).toBeGreaterThan(0)
+    for (const s of running) {
+      expect(s.state).toBe('running')
+    }
+
+    // Filter for a state that our sandbox isn't in
+    const stopped = await provider.list({ state: 'stopped' })
+    expect(stopped.find(s => s.id === sharedSandboxId)).toBeUndefined()
+  })
+
+  it('list() with array state filter', async () => {
+    const results = await provider.list({ state: ['running', 'stopped'] })
+    for (const s of results) {
+      expect(['running', 'stopped']).toContain(s.state)
+    }
+  })
+
+  // ─── destroySandbox ───
+
+  it('destroy is idempotent — double destroy does not throw', async () => {
     await provider.destroy(sharedSandboxId!)
     const destroyedId = sharedSandboxId!
     sharedSandboxId = null
-    // Second destroy should not throw (idempotent)
+    // Second destroy should not throw
     await expect(provider.destroy(destroyedId)).resolves.toBeUndefined()
   })
 
+  it('destroy non-existent sandbox does not throw', async () => {
+    await expect(
+      provider.destroy('00000000-0000-0000-0000-000000000000'),
+    ).resolves.toBeUndefined()
+  })
+
+  // ─── Volumes ───
+
   describe('volumes', () => {
-    it('createVolume → listVolumes → deleteVolume', async () => {
+    it('createVolume → listVolumes → deleteVolume full lifecycle', async () => {
       const volumeProvider = withVolumes(provider)
       expect(volumeProvider).not.toBeNull()
       if (!volumeProvider) return
 
+      // Create
       const vol = await volumeProvider.createVolume({ name: `sandbank-test-${Date.now()}` })
       expect(vol.id).toBeTruthy()
+      expect(typeof vol.id).toBe('string')
+      expect(vol.name).toBeTruthy()
       expect(vol.attachedTo).toBeNull()
+      expect(typeof vol.sizeGB).toBe('number')
       console.log(`  volume created: ${vol.id}`)
 
+      // List — should include our volume
       const volumes = await volumeProvider.listVolumes()
-      expect(volumes.find(v => v.id === vol.id)).toBeDefined()
+      const found = volumes.find(v => v.id === vol.id)
+      expect(found).toBeDefined()
+      expect(found!.name).toBe(vol.name)
+      expect(found!.attachedTo).toBeNull()
 
+      // Delete
       await volumeProvider.deleteVolume(vol.id)
 
-      // Volume deletion is eventually consistent — poll until gone
+      // Poll until gone (eventually consistent)
       let gone = false
       for (let i = 0; i < 10; i++) {
         await new Promise(r => setTimeout(r, 2000))
@@ -130,7 +264,45 @@ describe('DaytonaAdapter integration', () => {
       console.log('  volume lifecycle ok')
     })
 
-    it('volume mount on sandbox', async () => {
+    it('deleteVolume is idempotent — non-existent volume does not throw', async () => {
+      const volumeProvider = withVolumes(provider)
+      if (!volumeProvider) return
+
+      // Should not throw for a random ID
+      await expect(
+        volumeProvider.deleteVolume('00000000-0000-0000-0000-000000000000'),
+      ).resolves.toBeUndefined()
+    })
+
+    it('listVolumes shows attachedTo when volume is mounted', async () => {
+      const volumeProvider = withVolumes(provider)
+      if (!volumeProvider) return
+
+      const vol = await volumeProvider.createVolume({ name: `sandbank-attach-${Date.now()}` })
+
+      try {
+        const sandbox = await provider.create({
+          image: 'ubuntu:latest',
+          autoDestroyMinutes: 5,
+          volumes: [{ id: vol.id, mountPath: '/workspace' }],
+        })
+        extraCleanupIds.push(sandbox.id)
+
+        // listVolumes should show this volume attached to the sandbox
+        const volumes = await volumeProvider.listVolumes()
+        const found = volumes.find(v => v.id === vol.id)
+        expect(found).toBeDefined()
+        expect(found!.attachedTo).toBe(sandbox.id)
+        console.log(`  attachedTo = ${found!.attachedTo} (correct)`)
+
+        await provider.destroy(sandbox.id)
+        extraCleanupIds.splice(extraCleanupIds.indexOf(sandbox.id), 1)
+      } finally {
+        await volumeProvider.deleteVolume(vol.id)
+      }
+    })
+
+    it('volume mount — data is accessible inside sandbox', async () => {
       const volumeProvider = withVolumes(provider)
       if (!volumeProvider) return
 
@@ -144,15 +316,34 @@ describe('DaytonaAdapter integration', () => {
         })
         extraCleanupIds.push(sandbox.id)
 
+        // Write via exec, verify mount works
         await sandbox.exec('echo "persistent" > /workspace/test.txt')
         const result = await sandbox.exec('cat /workspace/test.txt')
         expect(result.stdout).toContain('persistent')
-        console.log('  volume mount + write ok')
+
+        // Verify mount point exists
+        const df = await sandbox.exec('df /workspace')
+        expect(df.exitCode).toBe(0)
+        console.log('  volume mount + data ok')
 
         await provider.destroy(sandbox.id)
         extraCleanupIds.splice(extraCleanupIds.indexOf(sandbox.id), 1)
       } finally {
         await volumeProvider.deleteVolume(vol.id)
+      }
+    })
+  })
+
+  // ─── Error wrapping ───
+
+  describe('error wrapping', () => {
+    it('createSandbox wraps errors as ProviderError', async () => {
+      try {
+        await provider.create({ image: 'nonexistent-image-that-will-never-exist:99.99' })
+        expect.fail('should have thrown')
+      } catch (err) {
+        expect(err).toBeInstanceOf(ProviderError)
+        expect((err as ProviderError).provider).toBe('daytona')
       }
     })
   })
