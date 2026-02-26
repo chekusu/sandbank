@@ -39,6 +39,22 @@ importers:
         specifier: ^8.18.0
         version: 8.19.0
 
+  packages/cloudflare:
+    dependencies:
+      '@cloudflare/sandbox':
+        specifier: ^0.7.0
+        version: 0.7.6
+      '@sandbank/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@cloudflare/workers-types':
+        specifier: ^4.20250214.0
+        version: 4.20260305.0
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+
   packages/core:
     devDependencies:
       '@sandbank/relay':
@@ -284,6 +300,26 @@ packages:
   '@bcoe/v8-coverage@1.0.2':
     resolution: {integrity: sha512-6zABk/ECA/QYSCQ1NGiVwwbQerUCZ+TQbp64Q3AgmfNvurHH0j8TtXa1qbShXA6qqkpAj4V5W8pP6mLe1mcMqA==}
     engines: {node: '>=18'}
+
+  '@cloudflare/containers@0.0.30':
+    resolution: {integrity: sha512-i148xBgmyn/pje82ZIyuTr/Ae0BT/YWwa1/GTJcw6DxEjUHAzZLaBCiX446U9OeuJ2rBh/L/9FIzxX5iYNt1AQ==}
+
+  '@cloudflare/sandbox@0.7.6':
+    resolution: {integrity: sha512-tBDM3AsKeMVxCUXtClTC4rRKHejx8J54Uj7ngyNb7q2tRc4KkaFDY9o70Jq6E3nbxRNwJZ9TxdxtnbQvOy1F6g==}
+    peerDependencies:
+      '@openai/agents': ^0.3.3
+      '@opencode-ai/sdk': ^1.1.40
+      '@xterm/xterm': '>=5.0.0'
+    peerDependenciesMeta:
+      '@openai/agents':
+        optional: true
+      '@opencode-ai/sdk':
+        optional: true
+      '@xterm/xterm':
+        optional: true
+
+  '@cloudflare/workers-types@4.20260305.0':
+    resolution: {integrity: sha512-sCgPFnQ03SVpC2OVW8wysONLZW/A8hlp9Mq2ckG/h1oId4kr9NawA6vUiOmOjCWRn2hIohejBYVQ+Vu20rCdKA==}
 
   '@daytonaio/api-client@0.144.0':
     resolution: {integrity: sha512-qr9c6YLntqmxbGAwYNIvHqZxA5zWl0nGY5aH3oK++1x03uDc5YnCwfcX7M7WCemt2iBUtLjQshdRKwFv0sDYsA==}
@@ -1134,6 +1170,9 @@ packages:
 
   asynckit@0.4.0:
     resolution: {integrity: sha512-Oei9OH4tRh0YqU3GxhX79dM/mwVgvbZJaSNaRk+bshkj0S5cfHcgYakreBjrHwatXKbz+IoIdYLxrKim2MjW0Q==}
+
+  aws4fetch@1.0.20:
+    resolution: {integrity: sha512-/djoAN709iY65ETD6LKCtyyEI04XIBP5xVvfmNxsEP0uJB5tyaGBztSryRr4HqMStr9R06PisQE7m9zDTXKu6g==}
 
   axios@1.13.5:
     resolution: {integrity: sha512-cz4ur7Vb0xS4/KUN0tPWe44eqxrIu31me+fbang3ijiNscE129POzipJJA6zniq2C/Z6sJCjMimjS8Lc/GAs8Q==}
@@ -2224,6 +2263,15 @@ snapshots:
 
   '@bcoe/v8-coverage@1.0.2': {}
 
+  '@cloudflare/containers@0.0.30': {}
+
+  '@cloudflare/sandbox@0.7.6':
+    dependencies:
+      '@cloudflare/containers': 0.0.30
+      aws4fetch: 1.0.20
+
+  '@cloudflare/workers-types@4.20260305.0': {}
+
   '@daytonaio/api-client@0.144.0':
     dependencies:
       axios: 1.13.5
@@ -3174,6 +3222,8 @@ snapshots:
       js-tokens: 10.0.0
 
   asynckit@0.4.0: {}
+
+  aws4fetch@1.0.20: {}
 
   axios@1.13.5:
     dependencies:
