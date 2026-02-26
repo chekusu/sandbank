@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { createProvider } from '../src/provider.js'
-import { ProviderError } from '../src/errors.js'
+import { CapabilityNotSupportedError, ProviderError } from '../src/errors.js'
 import type { SandboxAdapter, AdapterSandbox, Capability } from '../src/types.js'
 
 function mockAdapterSandbox(overrides: Partial<AdapterSandbox> = {}): AdapterSandbox {
@@ -115,18 +115,18 @@ describe('createProvider', () => {
     expect(adapter.destroySandbox).toHaveBeenCalledWith('sb-mock')
   })
 
-  it('uploadArchive throws ProviderError when not implemented', async () => {
+  it('uploadArchive throws CapabilityNotSupportedError when not implemented', async () => {
     const adapter = mockAdapter()
     const provider = createProvider(adapter)
     const sandbox = await provider.create({ image: 'node:22' })
-    expect(() => sandbox.uploadArchive(new Uint8Array([1]))).toThrow(ProviderError)
+    expect(() => sandbox.uploadArchive(new Uint8Array([1]))).toThrow(CapabilityNotSupportedError)
   })
 
-  it('downloadArchive throws ProviderError when not implemented', async () => {
+  it('downloadArchive throws CapabilityNotSupportedError when not implemented', async () => {
     const adapter = mockAdapter()
     const provider = createProvider(adapter)
     const sandbox = await provider.create({ image: 'node:22' })
-    expect(() => sandbox.downloadArchive()).toThrow(ProviderError)
+    expect(() => sandbox.downloadArchive()).toThrow(CapabilityNotSupportedError)
   })
 
   it('exposes volume methods when adapter declares volumes capability and has methods', async () => {

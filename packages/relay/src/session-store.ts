@@ -1,12 +1,57 @@
 import { randomUUID } from 'node:crypto'
 import { ContextStoreServer } from './context-store.js'
-import type { RelaySession, SandboxEntry, QueuedMessage, ConnectedClient } from './types.js'
+import type { RelaySession, SandboxEntry, QueuedMessage, ConnectedClient, SessionStoreOptions } from './types.js'
+
+const DEFAULT_SESSION_TTL_MS = 30 * 60 * 1000  // 30 minutes
+const DEFAULT_MAX_SESSIONS = 1000
+const DEFAULT_MAX_QUEUE_SIZE = 10_000
+const DEFAULT_SWEEP_INTERVAL_MS = 60 * 1000    // 60 seconds
 
 export class SessionStore {
   private sessions = new Map<string, RelaySession>()
   private contexts = new Map<string, ContextStoreServer>()
+  private sweepTimer: ReturnType<typeof setInterval> | null = null
+
+  readonly sessionTtlMs: number
+  readonly maxSessions: number
+  readonly maxQueueSize: number
+
+  constructor(options: SessionStoreOptions = {}) {
+    this.sessionTtlMs = options.sessionTtlMs ?? DEFAULT_SESSION_TTL_MS
+    this.maxSessions = options.maxSessions ?? DEFAULT_MAX_SESSIONS
+    this.maxQueueSize = options.maxQueueSize ?? DEFAULT_MAX_QUEUE_SIZE
+
+    const sweepInterval = options.sweepIntervalMs ?? DEFAULT_SWEEP_INTERVAL_MS
+    if (this.sessionTtlMs > 0) {
+      this.sweepTimer = setInterval(() => this.sweep(), sweepInterval)
+      this.sweepTimer.unref()
+    }
+  }
+
+  /** 停止清扫定时器（用于优雅关闭） */
+  dispose(): void {
+    if (this.sweepTimer) {
+      clearInterval(this.sweepTimer)
+      this.sweepTimer = null
+    }
+  }
+
+  /** 获取当前 session 数量 */
+  get size(): number {
+    return this.sessions.size
+  }
 
   createSession(id: string, token?: string): RelaySession {
+    // 容量检查
+    if (this.sessions.size >= this.maxSessions) {
+      // 先尝试清扫过期 session
+      this.sweep()
+      if (this.sessions.size >= this.maxSessions) {
+        throw new Error(`Max sessions reached (${this.maxSessions})`)
+      }
+    }
+
+    const now = Date.now()
     const session: RelaySession = {
       id,
       token: token ?? randomUUID(),
@@ -15,6 +60,8 @@ export class SessionStore {
       clients: new Set(),
       messageQueues: new Map(),
       pollWaiters: new Map(),
+      createdAt: now,
+      lastActivityAt: now,
     }
     this.sessions.set(id, session)
     this.contexts.set(id, new ContextStoreServer())
@@ -27,6 +74,11 @@ export class SessionStore {
 
   getOrCreateSession(id: string, token?: string): RelaySession {
     return this.getSession(id) ?? this.createSession(id, token)
+  }
+
+  /** 更新 session 的最后活跃时间 */
+  touch(session: RelaySession): void {
+    session.lastActivityAt = Date.now()
   }
 
   validateToken(sessionId: string, token: string): boolean {
@@ -60,11 +112,30 @@ export class SessionStore {
     this.contexts.delete(id)
   }
 
+  /** 清扫过期且无活跃连接的 session */
+  sweep(): number {
+    if (this.sessionTtlMs <= 0) return 0
+
+    const now = Date.now()
+    let evicted = 0
+
+    for (const [id, session] of this.sessions) {
+      const idle = now - session.lastActivityAt
+      if (idle > this.sessionTtlMs && session.clients.size === 0) {
+        this.deleteSession(id)
+        evicted++
+      }
+    }
+
+    return evicted
+  }
+
   /** 注册沙箱名 */
   registerSandbox(sessionId: string, name: string, sandboxId: string): void {
     const session = this.getSession(sessionId)
     if (!session) throw new Error(`Session not found: ${sessionId}`)
 
+    this.touch(session)
     session.sandboxes.set(name, { name, sandboxId, state: 'running' })
     session.messageQueues.set(name, [])
   }
@@ -74,7 +145,19 @@ export class SessionStore {
     const queue = session.messageQueues.get(to)
     if (!queue) return // 目标不存在，静默忽略
 
+    // 队列大小限制：丢弃最旧的 normal 消息
+    if (queue.length >= this.maxQueueSize) {
+      const normalIdx = queue.findIndex(m => m.priority === 'normal')
+      if (normalIdx >= 0) {
+        queue.splice(normalIdx, 1)
+      } else {
+        // 全是 steer 消息，丢弃最旧的
+        queue.shift()
+      }
+    }
+
     queue.push(msg)
+    this.touch(session)
 
     // 检查是否有 long-polling 等待者
     const waiters = session.pollWaiters.get(to)
@@ -112,6 +195,7 @@ export class SessionStore {
       return 0
     })
 
+    this.touch(session)
     const msgs = queue.splice(0, limit)
     return msgs
   }
@@ -162,6 +246,8 @@ export class SessionStore {
       summary,
       timestamp: new Date().toISOString(),
     }
+
+    this.touch(session)
 
     // 通知编排者
     const notification = JSON.stringify({

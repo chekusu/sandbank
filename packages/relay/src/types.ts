@@ -43,4 +43,18 @@ export interface RelaySession {
     resolve: (msgs: QueuedMessage[]) => void
     timer: ReturnType<typeof setTimeout>
   }>>
+  createdAt: number
+  lastActivityAt: number
+}
+
+/** SessionStore 配置选项 */
+export interface SessionStoreOptions {
+  /** Session 空闲超时（毫秒），默认 30 分钟 */
+  sessionTtlMs?: number
+  /** 最大 session 数，默认 1000 */
+  maxSessions?: number
+  /** 每个沙箱的最大消息队列长度，默认 10000 */
+  maxQueueSize?: number
+  /** 清扫间隔（毫秒），默认 60 秒 */
+  sweepIntervalMs?: number
 }

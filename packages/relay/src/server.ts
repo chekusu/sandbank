@@ -1,11 +1,11 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { WebSocketServer, type WebSocket } from 'ws'
 import type { JsonRpcRequest } from '@sandbank/core'
-import type { ConnectedClient } from './types.js'
+import type { ConnectedClient, SessionStoreOptions } from './types.js'
 import { SessionStore } from './session-store.js'
 import { handleRpc, handleAuth } from './protocol.js'
 
-export interface RelayServerOptions {
+export interface RelayServerOptions extends SessionStoreOptions {
   port?: number
   host?: string
 }
@@ -21,7 +21,7 @@ export async function startRelay(options: RelayServerOptions = {}): Promise<Rela
   const port = options.port ?? 0
   const host = options.host ?? '127.0.0.1'
 
-  const store = new SessionStore()
+  const store = new SessionStore(options)
   const httpServer = createServer((req, res) => handleHttp(store, req, res))
   const wss = new WebSocketServer({ server: httpServer })
 
@@ -41,6 +41,7 @@ export async function startRelay(options: RelayServerOptions = {}): Promise<Rela
         url,
         wsUrl,
         async close() {
+          store.dispose()
           // 关闭所有 WebSocket 连接
           for (const ws of wss.clients) {
             ws.close(1000, 'relay shutting down')
@@ -75,16 +76,30 @@ function handleHttp(store: SessionStore, req: IncomingMessage, res: ServerRespon
     return
   }
 
-  // Token 验证：如果 session 已存在，必须验证 token
+  // Token 验证：如果 session 已存在，必须提供有效 token
   const existingSession = store.getSession(sessionId)
-  if (existingSession && authToken && !store.validateToken(sessionId, authToken)) {
-    res.writeHead(403, { 'Content-Type': 'application/json' })
-    res.end(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Invalid token' } }))
-    return
+  if (existingSession) {
+    if (!authToken) {
+      res.writeHead(403, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Missing X-Auth-Token for existing session' } }))
+      return
+    }
+    if (!store.validateToken(sessionId, authToken)) {
+      res.writeHead(403, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Invalid token' } }))
+      return
+    }
   }
 
   // 确保 session 存在
-  store.getOrCreateSession(sessionId, authToken)
+  const session = store.getOrCreateSession(sessionId, authToken)
+  store.touch(session)
+
+  // 返回 session token（首次创建时客户端需要它来做后续请求）
+  const responseHeaders: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'X-Auth-Token': session.token,
+  }
 
   let body = ''
   req.on('data', (chunk: Buffer) => { body += chunk.toString() })
@@ -93,7 +108,7 @@ function handleHttp(store: SessionStore, req: IncomingMessage, res: ServerRespon
     try {
       request = JSON.parse(body) as JsonRpcRequest
     } catch {
-      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.writeHead(400, responseHeaders)
       res.end(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } }))
       return
     }
@@ -108,14 +123,14 @@ function handleHttp(store: SessionStore, req: IncomingMessage, res: ServerRespon
 
     if (result instanceof Promise) {
       result.then((response) => {
-        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.writeHead(200, responseHeaders)
         res.end(JSON.stringify(response))
       }).catch((err) => {
-        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.writeHead(500, responseHeaders)
         res.end(JSON.stringify({ jsonrpc: '2.0', id: request.id, error: { code: -32000, message: (err as Error).message } }))
       })
     } else {
-      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.writeHead(200, responseHeaders)
       res.end(JSON.stringify(result))
     }
   })

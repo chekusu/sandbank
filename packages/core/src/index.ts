@@ -53,3 +53,24 @@ export {
 
 // File helpers (for adapter authors)
 export { writeFileViaExec, readFileViaExec } from './file-helpers.js'
+
+// Session types
+export type {
+  MessagePriority,
+  SessionMessage,
+  ContextStore,
+  CompletionStatus,
+  SandboxCompletion,
+  SendOptions,
+  Session,
+  RelayConfig,
+  CreateSessionConfig,
+  JsonRpcRequest,
+  JsonRpcResponse,
+  JsonRpcNotification,
+  JsonRpcError,
+  Transport,
+} from './session-types.js'
+
+// Session factory
+export { createSession } from './session.js'

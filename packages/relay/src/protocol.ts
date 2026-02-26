@@ -66,8 +66,11 @@ export function handleAuth(
   let session: ReturnType<typeof store.getSession>
 
   if (existing) {
-    // Session 已存在 → 验证 token
-    if (token && !store.validateToken(sessionId, token)) {
+    // Session 已存在 → 必须提供有效 token
+    if (!token) {
+      return rpcError(id, -32600, 'Missing token for existing session')
+    }
+    if (!store.validateToken(sessionId, token)) {
       return rpcError(id, -32600, 'Invalid token')
     }
     session = existing

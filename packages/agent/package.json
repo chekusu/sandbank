@@ -1,5 +1,5 @@
 {
-  "name": "@sandbank/core",
+  "name": "@sandbank/agent",
   "version": "0.1.0",
   "type": "module",
   "exports": {
@@ -8,6 +8,9 @@
       "import": "./dist/index.js"
     }
   },
+  "bin": {
+    "sandbank-agent": "./dist/cli.js"
+  },
   "files": ["dist"],
   "scripts": {
     "build": "tsc",
@@ -15,14 +18,10 @@
     "clean": "rm -rf dist"
   },
   "peerDependencies": {
-    "@sandbank/relay": "workspace:*"
-  },
-  "peerDependenciesMeta": {
-    "@sandbank/relay": {
-      "optional": true
-    }
+    "@sandbank/core": "workspace:*"
   },
   "devDependencies": {
+    "@sandbank/core": "workspace:*",
     "@sandbank/relay": "workspace:*",
     "@types/node": "^22.15.0",
     "typescript": "^5.7.3",
