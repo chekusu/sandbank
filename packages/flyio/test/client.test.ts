@@ -83,7 +83,7 @@ describe('createFlyioClient', () => {
     expect(url).toBe('https://api.machines.dev/v1/apps/my-app/machines/m-1/exec')
     expect(opts.method).toBe('POST')
     const body = JSON.parse(opts.body as string)
-    expect(body.cmd).toBe('bash -c "echo hello world"')
+    expect(body.cmd).toEqual(['bash', '-c', 'echo hello world'])
   })
 
   it('waitForState calls correct URL with params', async () => {

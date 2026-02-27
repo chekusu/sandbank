@@ -147,7 +147,7 @@ describe('FlyioAdapter', () => {
 
       await sandbox.exec('ls', { cwd: '/app' })
 
-      expect(mockClient.exec).toHaveBeenCalledWith('m-123', 'cd /app && ls')
+      expect(mockClient.exec).toHaveBeenCalledWith('m-123', 'cd "/app" && ls')
     })
   })
 

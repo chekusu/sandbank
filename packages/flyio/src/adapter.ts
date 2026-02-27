@@ -46,7 +46,7 @@ function wrapMachine(machine: FlyioMachine, client: FlyioClient, appName: string
 
     async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
       const cmd = options?.cwd
-        ? `cd ${options.cwd} && ${command}`
+        ? `cd ${JSON.stringify(options.cwd)} && ${command}`
         : command
       const result = await client.exec(machine.id, cmd)
       return {
@@ -87,6 +87,7 @@ export class FlyioAdapter implements SandboxAdapter {
     try {
       const machine = await this.client.createMachine({
         image: config.image,
+        region: config.region,
         env: config.env,
         guest: {
           cpu_kind: 'shared',
@@ -135,6 +136,7 @@ export class FlyioAdapter implements SandboxAdapter {
         state: mapState(m.state),
         createdAt: m.created_at,
         image: m.config.image,
+        region: m.region,
       }))
 
       if (filter?.state) {

@@ -82,7 +82,7 @@ export function createFlyioClient(config: FlyioAdapterConfig) {
     async exec(machineId: string, command: string): Promise<FlyioExecResult> {
       return request<FlyioExecResult>(`/machines/${machineId}/exec`, {
         method: 'POST',
-        body: JSON.stringify({ cmd: `bash -c ${JSON.stringify(command)}` }),
+        body: JSON.stringify({ cmd: ['bash', '-c', command] }),
       })
     },
 
