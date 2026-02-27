@@ -45,6 +45,9 @@ export interface CreateConfig {
     id: string
     mountPath: string
   }>
+
+  /** 创建超时（秒）。默认由 provider 决定（Daytona 默认 60s） */
+  timeout?: number
 }
 
 export interface ListFilter {

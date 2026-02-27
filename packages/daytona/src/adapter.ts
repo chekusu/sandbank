@@ -140,15 +140,18 @@ export class DaytonaAdapter implements SandboxAdapter {
   async createSandbox(config: CreateConfig): Promise<AdapterSandbox> {
     const daytona = await this.getClient()
     try {
-      const sandbox = await daytona.create({
-        image: config.image,
-        envVars: config.env,
-        resources: config.resources
-          ? { cpu: config.resources.cpu, memory: config.resources.memory, disk: config.resources.disk }
-          : undefined,
-        volumes: config.volumes?.map((v: { id: string; mountPath: string }) => ({ volumeId: v.id, mountPath: v.mountPath })),
-        autoDeleteInterval: config.autoDestroyMinutes,
-      })
+      const sandbox = await daytona.create(
+        {
+          image: config.image,
+          envVars: config.env,
+          resources: config.resources
+            ? { cpu: config.resources.cpu, memory: config.resources.memory, disk: config.resources.disk }
+            : undefined,
+          volumes: config.volumes?.map((v: { id: string; mountPath: string }) => ({ volumeId: v.id, mountPath: v.mountPath })),
+          autoDeleteInterval: config.autoDestroyMinutes,
+        },
+        config.timeout ? { timeout: config.timeout } : undefined,
+      )
       return wrapDaytonaSandbox(sandbox)
     } catch (err) {
       throw new ProviderError('daytona', err)
