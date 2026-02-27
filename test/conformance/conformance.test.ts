@@ -7,10 +7,11 @@
  * Environment variables:
  *   DAYTONA_API_KEY  + DAYTONA_API_URL (optional) → Daytona provider
  *   E2E_WORKER_URL                                → Cloudflare provider (via HTTP adapter)
+ *   FLY_API_TOKEN + FLY_APP_NAME                  → Fly.io provider
  *
- * - Neither set  → all tests skip
+ * - None set     → all tests skip
  * - One set      → that provider's conformance tests run; hot-swap skips
- * - Both set     → full suite including hot-swap
+ * - 2+ set       → full suite including hot-swap
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { createProvider } from '@sandbank/core'
@@ -43,6 +44,16 @@ if (process.env.E2E_WORKER_URL) {
     workerUrl: process.env.E2E_WORKER_URL,
   })
   providers.push({ name: 'cloudflare', provider: createProvider(adapter) })
+}
+
+if (process.env.FLY_API_TOKEN && process.env.FLY_APP_NAME) {
+  const { FlyioAdapter } = await import('@sandbank/flyio')
+  const adapter = new FlyioAdapter({
+    apiToken: process.env.FLY_API_TOKEN,
+    appName: process.env.FLY_APP_NAME,
+    region: process.env.FLY_REGION,
+  })
+  providers.push({ name: 'flyio', provider: createProvider(adapter) })
 }
 
 // ---------------------------------------------------------------------------
@@ -289,7 +300,7 @@ describe('hot-swap: switch providers mid-session', () => {
 
 if (providers.length === 0) {
   describe('conformance (skipped)', () => {
-    it('no providers configured — set DAYTONA_API_KEY and/or E2E_WORKER_URL', () => {
+    it('no providers configured — set DAYTONA_API_KEY, E2E_WORKER_URL, and/or FLY_API_TOKEN + FLY_APP_NAME', () => {
       expect(true).toBe(true)
     })
   })
