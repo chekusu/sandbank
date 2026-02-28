@@ -1,7 +1,15 @@
 {
   "name": "@sandbank/relay",
   "version": "0.1.0",
+  "description": "WebSocket relay server for multi-agent communication in Sandbank",
+  "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chekusu/sandbank.dev.git",
+    "directory": "packages/relay"
+  },
+  "keywords": ["sandbox", "ai-agent", "relay", "websocket", "multi-agent"],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

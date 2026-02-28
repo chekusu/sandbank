@@ -1,8 +1,14 @@
 {
   "name": "sandbank",
   "version": "0.1.0",
+  "description": "Unified sandbox SDK for AI agents — write once, run on any cloud",
+  "license": "MIT",
   "private": true,
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chekusu/sandbank.dev.git"
+  },
   "scripts": {
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",

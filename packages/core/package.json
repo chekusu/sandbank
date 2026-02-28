@@ -1,7 +1,15 @@
 {
   "name": "@sandbank/core",
   "version": "0.1.0",
+  "description": "Unified sandbox SDK for AI agents — provider abstraction, capability system, and error types",
+  "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chekusu/sandbank.dev.git",
+    "directory": "packages/core"
+  },
+  "keywords": ["sandbox", "ai-agent", "cloud", "provider", "sdk"],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

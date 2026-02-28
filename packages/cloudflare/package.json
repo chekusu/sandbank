@@ -1,7 +1,15 @@
 {
   "name": "@sandbank/cloudflare",
   "version": "0.1.0",
+  "description": "Cloudflare Workers sandbox adapter for Sandbank",
+  "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chekusu/sandbank.dev.git",
+    "directory": "packages/cloudflare"
+  },
+  "keywords": ["sandbox", "ai-agent", "cloudflare", "workers", "cloud"],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

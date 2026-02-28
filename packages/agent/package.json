@@ -1,7 +1,15 @@
 {
   "name": "@sandbank/agent",
   "version": "0.1.0",
+  "description": "Lightweight client for AI agents running inside Sandbank sandboxes",
+  "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chekusu/sandbank.dev.git",
+    "directory": "packages/agent"
+  },
+  "keywords": ["sandbox", "ai-agent", "client", "cli"],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

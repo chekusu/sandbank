@@ -1,7 +1,15 @@
 {
   "name": "@sandbank/flyio",
   "version": "0.1.0",
+  "description": "Fly.io Machines sandbox adapter for Sandbank",
+  "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chekusu/sandbank.dev.git",
+    "directory": "packages/flyio"
+  },
+  "keywords": ["sandbox", "ai-agent", "flyio", "fly-machines", "cloud"],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
