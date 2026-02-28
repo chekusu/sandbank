@@ -8,6 +8,8 @@ import type {
   SandboxAdapter,
   SandboxInfo,
   SandboxState,
+  TerminalInfo,
+  TerminalOptions,
   VolumeConfig,
   VolumeInfo,
 } from '@sandbank/core'
@@ -87,6 +89,41 @@ function wrapDaytonaSandbox(sandbox: DaytonaSandbox): AdapterSandbox {
       const preview = await sandbox.getPreviewLink(port)
       return { url: preview.url as string }
     },
+
+    async startTerminal(options?: TerminalOptions): Promise<TerminalInfo> {
+      const port = 7681
+      const shell = options?.shell ?? '/bin/bash'
+
+      // 1. Ensure ttyd is available (use wget fallback since curl may not be installed)
+      const check = await sandbox.process.executeCommand('which ttyd')
+      if ((check.exitCode as number) !== 0) {
+        const ttydUrl = 'https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64'
+        await sandbox.process.executeCommand(
+          `command -v curl > /dev/null && curl -sL ${ttydUrl} -o /usr/local/bin/ttyd`
+          + ` || { command -v wget > /dev/null && wget -qO /usr/local/bin/ttyd ${ttydUrl}; }`
+          + ` || { apt-get update -qq && apt-get install -y -qq wget > /dev/null && wget -qO /usr/local/bin/ttyd ${ttydUrl}; }`,
+        )
+        await sandbox.process.executeCommand('chmod +x /usr/local/bin/ttyd')
+      }
+
+      // 2. Start ttyd in background (-W enables write)
+      await sandbox.process.executeCommand(`nohup ttyd -W -p ${port} ${shell} > /dev/null 2>&1 &`)
+
+      // 3. Wait for ttyd to be ready (check process is running)
+      await sandbox.process.executeCommand(
+        `for i in $(seq 1 20); do pgrep -x ttyd > /dev/null && break || sleep 0.5; done`,
+      )
+
+      // 4. Get the public URL via preview link
+      const preview = await sandbox.getPreviewLink(port)
+      const previewUrl = preview.url as string
+      const wsUrl = previewUrl.replace(/^https?/, 'wss').replace(/\/$/, '') + '/ws'
+
+      return {
+        url: wsUrl,
+        port,
+      }
+    },
   }
 }
 
@@ -112,6 +149,7 @@ async function waitFor(fn: () => Promise<boolean>, intervalMs = 2000, maxAttempt
 export class DaytonaAdapter implements SandboxAdapter {
   readonly name = 'daytona'
   readonly capabilities: ReadonlySet<Capability> = new Set<Capability>([
+    'terminal',
     'volumes',
     'port.expose',
   ])

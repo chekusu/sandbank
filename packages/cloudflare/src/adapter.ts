@@ -10,6 +10,8 @@ import type {
   SandboxAdapter,
   SandboxInfo,
   SandboxState,
+  TerminalInfo,
+  TerminalOptions,
   VolumeConfig,
   VolumeInfo,
 } from '@sandbank/core'
@@ -147,6 +149,40 @@ function wrapCloudflareSandbox(
       }
       await sandbox.restoreBackup(backup)
     },
+
+    async startTerminal(options?: TerminalOptions): Promise<TerminalInfo> {
+      const port = 7681
+      const shell = options?.shell ?? '/bin/bash'
+      const ttydUrl = 'https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64'
+
+      // 1. Ensure ttyd is available (use wget fallback since curl may not be installed)
+      const check = await withRetry(() => sandbox.exec('which ttyd'))
+      if ((check.exitCode ?? (check.success ? 0 : 1)) !== 0) {
+        await withRetry(() => sandbox.exec(
+          `command -v curl > /dev/null && curl -sL ${ttydUrl} -o /usr/local/bin/ttyd`
+          + ` || { command -v wget > /dev/null && wget -qO /usr/local/bin/ttyd ${ttydUrl}; }`
+          + ` || { apt-get update -qq && apt-get install -y -qq wget > /dev/null && wget -qO /usr/local/bin/ttyd ${ttydUrl}; }`,
+        ))
+        await withRetry(() => sandbox.exec('chmod +x /usr/local/bin/ttyd'))
+      }
+
+      // 2. Start ttyd in background (-W enables write)
+      await withRetry(() => sandbox.exec(`nohup ttyd -W -p ${port} ${shell} > /dev/null 2>&1 &`))
+
+      // 3. Wait for ttyd to be ready (check process is running)
+      await withRetry(() => sandbox.exec(
+        `for i in $(seq 1 20); do pgrep -x ttyd > /dev/null && break || sleep 0.5; done`,
+      ))
+
+      // 4. Expose port and return WebSocket URL
+      const exposed = await sandbox.exposePort(port, { hostname })
+      const url = exposed.url.replace(/\/$/, '') + '/ws'
+
+      return {
+        url,
+        port,
+      }
+    },
   }
 }
 
@@ -164,7 +200,7 @@ export class CloudflareAdapter implements SandboxAdapter {
   constructor(config: CloudflareAdapterConfig) {
     this.config = config
 
-    const caps: Capability[] = ['exec.stream', 'port.expose', 'snapshot']
+    const caps: Capability[] = ['exec.stream', 'terminal', 'port.expose', 'snapshot']
     if (config.storage) {
       caps.push('volumes')
     }
