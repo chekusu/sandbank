@@ -18,6 +18,7 @@ import {
   createProvider,
   withVolumes,
   withPortExpose,
+  withTerminal,
   hasCapability,
   SandboxNotFoundError,
   ProviderError,
@@ -64,9 +65,9 @@ describe.skipIf(skip)('FlyioAdapter integration', () => {
     expect(adapter.name).toBe('flyio')
     expect(hasCapability(provider, 'volumes')).toBe(true)
     expect(hasCapability(provider, 'port.expose')).toBe(true)
+    expect(hasCapability(provider, 'terminal')).toBe(true)
     // Capabilities we don't support
     expect(hasCapability(provider, 'exec.stream')).toBe(false)
-    expect(hasCapability(provider, 'terminal')).toBe(false)
     expect(hasCapability(provider, 'sleep')).toBe(false)
     expect(hasCapability(provider, 'snapshot')).toBe(false)
   })
@@ -245,6 +246,57 @@ describe.skipIf(skip)('FlyioAdapter integration', () => {
       expect(result.url).toContain(APP_NAME)
       console.log(`  exposePort(8080) → ${result.url}`)
     })
+  })
+
+  // ─── startTerminal ───
+
+  describe('startTerminal', () => {
+    let terminalSandboxId: string | null = null
+
+    afterAll(async () => {
+      if (terminalSandboxId) {
+        try { await provider.destroy(terminalSandboxId) } catch { /* best effort */ }
+      }
+    })
+
+    it('startTerminal installs ttyd and returns WebSocket URL', async () => {
+      const sandbox = await provider.create({
+        image: 'ubuntu:24.04',
+        resources: { cpu: 1, memory: 256 },
+      })
+      terminalSandboxId = sandbox.id
+      console.log(`  terminal sandbox created: ${sandbox.id}`)
+
+      const terminal = withTerminal(sandbox)
+      expect(terminal).not.toBeNull()
+      if (!terminal) return
+
+      const info = await terminal.startTerminal()
+      expect(info.url).toMatch(/^wss?:\/\//)
+      expect(info.url).toContain(APP_NAME)
+      expect(info.port).toBe(8080)
+      console.log(`  startTerminal → ${info.url}`)
+
+      // Verify ttyd is actually running inside the sandbox
+      const check = await sandbox.exec('pgrep -x ttyd')
+      expect(check.exitCode).toBe(0)
+      console.log('  ttyd process is running')
+    }, 120_000)
+
+    it('startTerminal with custom shell', async () => {
+      const sandbox = await provider.get(terminalSandboxId!)
+      const terminal = withTerminal(sandbox)
+      if (!terminal) return
+
+      // Kill existing ttyd first
+      await sandbox.exec('pkill ttyd || true')
+      await new Promise(r => setTimeout(r, 1000))
+
+      const info = await terminal.startTerminal({ shell: '/bin/sh' })
+      expect(info.url).toMatch(/^wss?:\/\//)
+      expect(info.port).toBe(8080)
+      console.log(`  startTerminal(sh) → ${info.url}`)
+    }, 120_000)
   })
 
   // ─── uploadArchive / downloadArchive (unsupported) ───

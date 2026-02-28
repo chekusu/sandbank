@@ -347,6 +347,43 @@ describeE2e('CloudflareAdapter e2e', () => {
     })
   })
 
+  // --- startTerminal ---
+
+  describe('startTerminal', () => {
+    it('should install ttyd and return WebSocket URL', async () => {
+      const result = await workerPost<{ url: string; port: number }>(
+        '/start-terminal',
+        { id: sandboxId },
+      )
+      expect(result.url).toBeTruthy()
+      expect(typeof result.url).toBe('string')
+      expect(result.url).toContain('/ws')
+      expect(result.port).toBe(7681)
+      console.log(`  startTerminal → ${result.url}`)
+
+      // Verify ttyd is running inside the sandbox
+      const check = await workerPost<{ exitCode: number; stdout: string }>(
+        '/exec',
+        { id: sandboxId, command: 'pgrep -x ttyd' },
+      )
+      expect(check.exitCode).toBe(0)
+      console.log('  ttyd process is running')
+    }, 60_000)
+
+    it('should support custom shell', async () => {
+      // Kill existing ttyd first
+      await workerPost('/exec', { id: sandboxId, command: 'pkill ttyd || true' })
+      await new Promise(r => setTimeout(r, 1000))
+
+      const result = await workerPost<{ url: string; port: number }>(
+        '/start-terminal',
+        { id: sandboxId, shell: '/bin/sh' },
+      )
+      expect(result.url).toBeTruthy()
+      expect(result.port).toBe(7681)
+    }, 60_000)
+  })
+
   // --- error handling ---
 
   describe('error handling', () => {

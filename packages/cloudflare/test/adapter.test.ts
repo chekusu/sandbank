@@ -64,14 +64,14 @@ describe('CloudflareAdapter', () => {
   describe('capabilities', () => {
     it('should declare exec.stream, port.expose, snapshot without storage', () => {
       const adapter = new CloudflareAdapter(createConfig())
-      expect(adapter.capabilities).toEqual(new Set(['exec.stream', 'port.expose', 'snapshot']))
+      expect(adapter.capabilities).toEqual(new Set(['exec.stream', 'terminal', 'port.expose', 'snapshot']))
     })
 
     it('should include volumes when storage is configured', () => {
       const adapter = new CloudflareAdapter(createConfig({
         storage: { endpoint: 'https://r2.example.com' },
       }))
-      expect(adapter.capabilities).toEqual(new Set(['exec.stream', 'port.expose', 'snapshot', 'volumes']))
+      expect(adapter.capabilities).toEqual(new Set(['exec.stream', 'terminal', 'port.expose', 'snapshot', 'volumes']))
     })
 
     it('should have name "cloudflare"', () => {

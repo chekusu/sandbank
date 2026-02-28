@@ -191,6 +191,19 @@ for (const entry of providers) {
       expect(collected).toContain('stream-test')
     })
 
+    // -- Capability: terminal --
+
+    it('startTerminal returns { url, port }', async () => {
+      if (!entry.provider.capabilities.has('terminal')) return
+
+      const terminal = sandbox as import('@sandbank/core').TerminalSandbox
+      const info = await terminal.startTerminal()
+      expect(typeof info.url).toBe('string')
+      expect(info.url.length).toBeGreaterThan(0)
+      expect(typeof info.port).toBe('number')
+      expect(info.port).toBeGreaterThan(0)
+    })
+
     // -- Capability: port.expose --
 
     it('exposePort returns a URL string', async () => {

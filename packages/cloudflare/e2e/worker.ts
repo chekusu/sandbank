@@ -78,6 +78,46 @@ export default {
         return json(result)
       }
 
+      if (request.method === 'POST' && path === '/start-terminal') {
+        const body = await request.json<{ id: string; shell?: string }>()
+        const sandbox = getSandbox(env.SANDBOX, body.id)
+        const port = 7681
+        const shell = body.shell ?? '/bin/bash'
+        const ttydUrl = 'https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64'
+
+        // 1. Ensure ttyd is available (use wget fallback since curl may not be installed)
+        const check = await sandbox.exec('which ttyd')
+        if ((check.exitCode ?? (check.success ? 0 : 1)) !== 0) {
+          await sandbox.exec(
+            `command -v curl > /dev/null && curl -sL ${ttydUrl} -o /usr/local/bin/ttyd`
+            + ` || { command -v wget > /dev/null && wget -qO /usr/local/bin/ttyd ${ttydUrl}; }`
+            + ` || { apt-get update -qq && apt-get install -y -qq wget > /dev/null && wget -qO /usr/local/bin/ttyd ${ttydUrl}; }`,
+          )
+          await sandbox.exec('chmod +x /usr/local/bin/ttyd')
+        }
+
+        // 2. Start ttyd in background
+        await sandbox.exec(`nohup ttyd -W -p ${port} ${shell} > /dev/null 2>&1 &`)
+
+        // 3. Wait for ttyd to be ready (check process is running)
+        await sandbox.exec(
+          `for i in $(seq 1 20); do pgrep -x ttyd > /dev/null && break || sleep 0.5; done`,
+        )
+
+        // 4. Expose port and return URL (handle already-exposed case)
+        let wsUrl: string
+        try {
+          const exposed = await sandbox.exposePort(port, { hostname: 'localhost' })
+          wsUrl = exposed.url.replace(/\/$/, '') + '/ws'
+        } catch (e) {
+          // Port may already be exposed from a previous call — build URL manually
+          const id = body.id
+          wsUrl = `http://${port}-${id}.localhost/ws`
+        }
+
+        return json({ url: wsUrl, port })
+      }
+
       if (request.method === 'POST' && path === '/snapshot/create') {
         const body = await request.json<{ id: string; name?: string }>()
         const sandbox = getSandbox(env.SANDBOX, body.id)

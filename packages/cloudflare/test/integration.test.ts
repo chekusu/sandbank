@@ -225,11 +225,11 @@ describe('CloudflareAdapter integration', () => {
   it('adapter has correct name and capabilities', () => {
     expect(adapter.name).toBe('cloudflare')
     expect(hasCapability(provider, 'exec.stream')).toBe(true)
+    expect(hasCapability(provider, 'terminal')).toBe(true)
     expect(hasCapability(provider, 'port.expose')).toBe(true)
     expect(hasCapability(provider, 'snapshot')).toBe(true)
     expect(hasCapability(provider, 'volumes')).toBe(true)
     // Capabilities we don't support
-    expect(hasCapability(provider, 'terminal')).toBe(false)
     expect(hasCapability(provider, 'sleep')).toBe(false)
   })
 

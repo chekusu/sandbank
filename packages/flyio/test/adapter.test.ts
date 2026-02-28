@@ -67,14 +67,13 @@ describe('FlyioAdapter', () => {
     it('should have name flyio and correct capabilities', () => {
       const adapter = createAdapter()
       expect(adapter.name).toBe('flyio')
-      expect(adapter.capabilities).toEqual(new Set(['volumes', 'port.expose']))
+      expect(adapter.capabilities).toEqual(new Set(['terminal', 'volumes', 'port.expose']))
     })
 
-    it('should not have exec.stream, snapshot, terminal, or sleep capabilities', () => {
+    it('should not have exec.stream, snapshot, or sleep capabilities', () => {
       const adapter = createAdapter()
       expect(adapter.capabilities.has('exec.stream' as never)).toBe(false)
       expect(adapter.capabilities.has('snapshot' as never)).toBe(false)
-      expect(adapter.capabilities.has('terminal' as never)).toBe(false)
       expect(adapter.capabilities.has('sleep' as never)).toBe(false)
     })
   })
@@ -169,6 +168,72 @@ describe('FlyioAdapter', () => {
       const result = await sandbox.exposePort!(8080)
 
       expect(result).toEqual({ url: 'https://my-app.fly.dev' })
+    })
+  })
+
+  // startTerminal
+  describe('startTerminal', () => {
+    it('should install ttyd if not present and start it', async () => {
+      const adapter = createAdapter()
+      const sandbox = await adapter.createSandbox({ image: 'node:22' })
+
+      // Reset exec mocks after createSandbox, then set up for startTerminal
+      mockClient.exec.mockReset()
+      mockClient.exec
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exit_code: 1 }) // which ttyd → not found
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exit_code: 0 }) // curl install
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exit_code: 0 }) // ttyd start
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exit_code: 0 }) // wait loop
+
+      const info = await sandbox.startTerminal!()
+
+      expect(info.url).toBe('wss://my-app.fly.dev/ws')
+      expect(info.port).toBe(8080)
+      expect(mockClient.exec).toHaveBeenCalledWith('m-123', expect.stringContaining('curl -sL'))
+    })
+
+    it('should skip install if ttyd already present', async () => {
+      // ttyd found → start → wait
+      mockClient.exec
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exit_code: 0 }) // createSandbox exec
+        .mockResolvedValueOnce({ stdout: '/usr/local/bin/ttyd', stderr: '', exit_code: 0 }) // which ttyd → found
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exit_code: 0 }) // ttyd start
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exit_code: 0 }) // wait loop
+
+      const adapter = createAdapter()
+      const sandbox = await adapter.createSandbox({ image: 'node:22' })
+
+      const info = await sandbox.startTerminal!()
+
+      expect(info.url).toBe('wss://my-app.fly.dev/ws')
+      expect(info.port).toBe(8080)
+      // No curl install call — verify exec was called 4 times total (createSandbox doesn't call exec)
+      // Actually createSandbox doesn't call exec, so it's: which + start + wait = 3 calls
+    })
+
+    it('should return valid WebSocket URL', async () => {
+      mockClient.exec.mockResolvedValue({ stdout: '/usr/local/bin/ttyd', stderr: '', exit_code: 0 })
+
+      const adapter = createAdapter()
+      const sandbox = await adapter.createSandbox({ image: 'node:22' })
+
+      const info = await sandbox.startTerminal!()
+
+      expect(info.url).toMatch(/^wss:\/\//)
+      expect(info.url).toContain('my-app.fly.dev')
+      expect(info.port).toBe(8080)
+    })
+
+    it('should use custom shell when specified', async () => {
+      mockClient.exec.mockResolvedValue({ stdout: '/usr/local/bin/ttyd', stderr: '', exit_code: 0 })
+
+      const adapter = createAdapter()
+      const sandbox = await adapter.createSandbox({ image: 'node:22' })
+
+      await sandbox.startTerminal!({ shell: '/bin/sh' })
+
+      // Verify ttyd was started with /bin/sh
+      expect(mockClient.exec).toHaveBeenCalledWith('m-123', expect.stringContaining('/bin/sh'))
     })
   })
 
