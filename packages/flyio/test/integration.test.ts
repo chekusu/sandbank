@@ -297,7 +297,7 @@ describe.skipIf(skip)('FlyioAdapter integration', () => {
 
       // Create
       const vol = await volumeProvider.createVolume({
-        name: `sb-test-${Date.now()}`,
+        name: `sb_test_${Date.now()}`,
         region: REGION,
         sizeGB: 1,
       })
@@ -349,7 +349,7 @@ describe.skipIf(skip)('FlyioAdapter integration', () => {
       if (!volumeProvider) return
 
       const vol = await volumeProvider.createVolume({
-        name: `sb-mount-${Date.now()}`,
+        name: `sb_mount_${Date.now()}`,
         region: REGION,
         sizeGB: 1,
       })

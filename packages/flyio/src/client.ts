@@ -37,6 +37,7 @@ export function createFlyioClient(config: FlyioAdapterConfig) {
       mounts?: Array<{ volume: string; path: string }>
       autoDestroy?: boolean
       restart?: { policy: string }
+      init?: { cmd?: string[]; entrypoint?: string[] }
     }): Promise<FlyioMachine> {
       return request<FlyioMachine>('/machines', {
         method: 'POST',
@@ -50,6 +51,7 @@ export function createFlyioClient(config: FlyioAdapterConfig) {
             mounts: params.mounts,
             auto_destroy: params.autoDestroy,
             restart: params.restart,
+            init: params.init,
           },
         }),
       })
@@ -82,7 +84,7 @@ export function createFlyioClient(config: FlyioAdapterConfig) {
     async exec(machineId: string, command: string): Promise<FlyioExecResult> {
       return request<FlyioExecResult>(`/machines/${machineId}/exec`, {
         method: 'POST',
-        body: JSON.stringify({ cmd: ['bash', '-c', command] }),
+        body: JSON.stringify({ cmd: `bash -c ${JSON.stringify(command)}` }),
       })
     },
 

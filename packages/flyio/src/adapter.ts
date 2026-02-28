@@ -107,6 +107,7 @@ export class FlyioAdapter implements SandboxAdapter {
         mounts: config.volumes?.map(v => ({ volume: v.id, path: v.mountPath })),
         autoDestroy: (config.autoDestroyMinutes ?? 0) > 0,
         restart: { policy: 'no' },
+        init: { cmd: ['sleep', 'infinity'] },
       })
 
       await this.client.waitForState(machine.id, 'started', config.timeout ?? 60)

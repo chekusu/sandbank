@@ -149,6 +149,15 @@ describe('FlyioAdapter', () => {
 
       expect(mockClient.exec).toHaveBeenCalledWith('m-123', 'cd "/app" && ls')
     })
+
+    it('should not prefix cd when cwd is not provided', async () => {
+      const adapter = createAdapter()
+      const sandbox = await adapter.createSandbox({ image: 'node:22' })
+
+      await sandbox.exec('ls')
+
+      expect(mockClient.exec).toHaveBeenCalledWith('m-123', 'ls')
+    })
   })
 
   // 7. exposePort
