@@ -15,8 +15,8 @@ import type {
   VolumeInfo,
   VolumeProvider,
 } from './types.js'
-import { CapabilityNotSupportedError, ProviderError, SandboxError } from './errors.js'
-import { readFileViaExec, writeFileViaExec } from './file-helpers.js'
+import { CapabilityNotSupportedError, ProviderError } from './errors.js'
+import { readFileViaExec, writeFileViaExec, uploadArchiveViaExec, downloadArchiveViaExec } from './file-helpers.js'
 
 /**
  * 将 AdapterSandbox 包装为完整的 Sandbox 接口。
@@ -42,14 +42,14 @@ function wrapSandbox(raw: AdapterSandbox, providerName: string): Sandbox {
       return readFileViaExec(raw, path)
     },
 
-    uploadArchive(_archive: Uint8Array | ReadableStream, _destDir?: string): Promise<void> {
-      if (raw.uploadArchive) return raw.uploadArchive(_archive, _destDir)
-      throw new SandboxError(`uploadArchive is not supported by '${providerName}'`, providerName)
+    uploadArchive(archive: Uint8Array | ReadableStream, destDir?: string): Promise<void> {
+      if (raw.uploadArchive) return raw.uploadArchive(archive, destDir)
+      return uploadArchiveViaExec(raw, archive, destDir)
     },
 
-    downloadArchive(_srcDir?: string): Promise<ReadableStream> {
-      if (raw.downloadArchive) return raw.downloadArchive(_srcDir)
-      throw new SandboxError(`downloadArchive is not supported by '${providerName}'`, providerName)
+    downloadArchive(srcDir?: string): Promise<ReadableStream> {
+      if (raw.downloadArchive) return raw.downloadArchive(srcDir)
+      return downloadArchiveViaExec(raw, srcDir)
     },
   }
 

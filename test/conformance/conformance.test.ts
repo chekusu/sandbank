@@ -174,6 +174,58 @@ for (const entry of providers) {
       await expect(entry.provider.destroy(ephemeral.id)).resolves.not.toThrow()
     })
 
+    // -- uploadArchive + downloadArchive --
+
+    it('uploadArchive + downloadArchive round-trip', async () => {
+      // Create files in sandbox to archive
+      await sandbox.exec('mkdir -p /tmp/conf-archive && echo "conformance-archive" > /tmp/conf-archive/test.txt')
+
+      // Create a tar.gz inside the sandbox
+      const tarResult = await sandbox.exec('tar czf /tmp/conf-archive.tar.gz -C /tmp/conf-archive . && base64 /tmp/conf-archive.tar.gz')
+      expect(tarResult.exitCode).toBe(0)
+
+      // Decode the tar.gz bytes
+      const clean = tarResult.stdout.replace(/\s/g, '')
+      const binaryStr = atob(clean)
+      const archiveBytes = new Uint8Array(binaryStr.length)
+      for (let i = 0; i < binaryStr.length; i++) {
+        archiveBytes[i] = binaryStr.charCodeAt(i)
+      }
+
+      // Upload archive to a new directory
+      await sandbox.uploadArchive(archiveBytes, '/tmp/conf-upload-dest')
+
+      // Verify extraction
+      const check = await sandbox.exec('cat /tmp/conf-upload-dest/test.txt')
+      expect(check.exitCode).toBe(0)
+      expect(check.stdout.trim()).toBe('conformance-archive')
+
+      // Download archive from that directory
+      const stream = await sandbox.downloadArchive('/tmp/conf-upload-dest')
+      expect(stream).toBeInstanceOf(ReadableStream)
+
+      // Read and re-upload to verify round-trip
+      const reader = stream.getReader()
+      const chunks: Uint8Array[] = []
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        chunks.push(value)
+      }
+      const totalLength = chunks.reduce((sum, c) => sum + c.length, 0)
+      const downloaded = new Uint8Array(totalLength)
+      let offset = 0
+      for (const chunk of chunks) {
+        downloaded.set(chunk, offset)
+        offset += chunk.length
+      }
+
+      await sandbox.uploadArchive(downloaded, '/tmp/conf-rt-verify')
+      const rtCheck = await sandbox.exec('cat /tmp/conf-rt-verify/test.txt')
+      expect(rtCheck.exitCode).toBe(0)
+      expect(rtCheck.stdout.trim()).toBe('conformance-archive')
+    })
+
     // -- Capability: exec.stream --
 
     it('stream output contains expected content', async () => {

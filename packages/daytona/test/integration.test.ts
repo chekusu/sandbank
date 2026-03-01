@@ -7,7 +7,7 @@ import {
   hasCapability,
   SandboxNotFoundError,
   ProviderError,
-  CapabilityNotSupportedError,
+
 } from '@sandbank/core'
 import { DaytonaAdapter } from '../src/index.js'
 
@@ -279,27 +279,109 @@ describe.skipIf(skip)('DaytonaAdapter integration', () => {
     }, 120_000)
   })
 
-  // ─── uploadArchive / downloadArchive (unsupported) ───
+  // ─── uploadArchive / downloadArchive (via exec fallback) ───
 
-  describe('archive operations (unsupported)', () => {
-    it('uploadArchive throws CapabilityNotSupportedError', async () => {
+  describe('archive operations', () => {
+    it('uploadArchive extracts files into sandbox', async () => {
       const sandbox = await provider.get(sharedSandboxId!)
-      try {
-        await sandbox.uploadArchive(new Uint8Array([1, 2, 3]))
-        expect.fail('should have thrown')
-      } catch (err) {
-        expect(err).toBeInstanceOf(CapabilityNotSupportedError)
+
+      // Create a tar.gz in the sandbox, then download its bytes to use as upload input
+      await sandbox.exec('mkdir -p /tmp/archive-src && echo "archive-test" > /tmp/archive-src/hello.txt')
+      const tarResult = await sandbox.exec('tar czf /tmp/test-archive.tar.gz -C /tmp/archive-src . && base64 /tmp/test-archive.tar.gz')
+      expect(tarResult.exitCode).toBe(0)
+
+      const clean = tarResult.stdout.replace(/\s/g, '')
+      const binary = atob(clean)
+      const archiveBytes = new Uint8Array(binary.length)
+      for (let i = 0; i < binary.length; i++) {
+        archiveBytes[i] = binary.charCodeAt(i)
       }
+
+      // Upload the archive to a different directory
+      await sandbox.uploadArchive(archiveBytes, '/tmp/archive-dest')
+
+      // Verify the file was extracted
+      const check = await sandbox.exec('cat /tmp/archive-dest/hello.txt')
+      expect(check.exitCode).toBe(0)
+      expect(check.stdout.trim()).toBe('archive-test')
     })
 
-    it('downloadArchive throws CapabilityNotSupportedError', async () => {
+    it('downloadArchive returns a valid tar.gz stream', async () => {
       const sandbox = await provider.get(sharedSandboxId!)
-      try {
-        await sandbox.downloadArchive()
-        expect.fail('should have thrown')
-      } catch (err) {
-        expect(err).toBeInstanceOf(CapabilityNotSupportedError)
+
+      // Create some files to archive
+      await sandbox.exec('mkdir -p /tmp/dl-src && echo "download-test" > /tmp/dl-src/data.txt')
+
+      const stream = await sandbox.downloadArchive('/tmp/dl-src')
+      expect(stream).toBeInstanceOf(ReadableStream)
+
+      // Read the stream
+      const reader = stream.getReader()
+      const chunks: Uint8Array[] = []
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        chunks.push(value)
       }
+      expect(chunks.length).toBeGreaterThan(0)
+
+      // Verify it's valid by uploading it back
+      const totalLength = chunks.reduce((sum, c) => sum + c.length, 0)
+      const allBytes = new Uint8Array(totalLength)
+      let offset = 0
+      for (const chunk of chunks) {
+        allBytes.set(chunk, offset)
+        offset += chunk.length
+      }
+
+      await sandbox.uploadArchive(allBytes, '/tmp/dl-verify')
+      const check = await sandbox.exec('cat /tmp/dl-verify/data.txt')
+      expect(check.exitCode).toBe(0)
+      expect(check.stdout.trim()).toBe('download-test')
+    })
+
+    it('upload → download round-trip preserves content', async () => {
+      const sandbox = await provider.get(sharedSandboxId!)
+
+      // Create source files
+      await sandbox.exec('mkdir -p /tmp/rt-src && echo "round-trip" > /tmp/rt-src/file.txt && echo "second" > /tmp/rt-src/file2.txt')
+
+      // Create a tar.gz from source
+      const tarResult = await sandbox.exec('tar czf /tmp/rt.tar.gz -C /tmp/rt-src . && base64 /tmp/rt.tar.gz')
+      expect(tarResult.exitCode).toBe(0)
+      const clean = tarResult.stdout.replace(/\s/g, '')
+      const binary = atob(clean)
+      const archiveBytes = new Uint8Array(binary.length)
+      for (let i = 0; i < binary.length; i++) {
+        archiveBytes[i] = binary.charCodeAt(i)
+      }
+
+      // Upload to new dir
+      await sandbox.uploadArchive(archiveBytes, '/tmp/rt-dest')
+
+      // Download from that dir
+      const stream = await sandbox.downloadArchive('/tmp/rt-dest')
+      const reader = stream.getReader()
+      const chunks: Uint8Array[] = []
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        chunks.push(value)
+      }
+      const totalLength = chunks.reduce((sum, c) => sum + c.length, 0)
+      const downloaded = new Uint8Array(totalLength)
+      let offset = 0
+      for (const chunk of chunks) {
+        downloaded.set(chunk, offset)
+        offset += chunk.length
+      }
+
+      // Upload downloaded archive to yet another dir to verify
+      await sandbox.uploadArchive(downloaded, '/tmp/rt-verify')
+      const check1 = await sandbox.exec('cat /tmp/rt-verify/file.txt')
+      expect(check1.stdout.trim()).toBe('round-trip')
+      const check2 = await sandbox.exec('cat /tmp/rt-verify/file2.txt')
+      expect(check2.stdout.trim()).toBe('second')
     })
   })
 

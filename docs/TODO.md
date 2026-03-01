@@ -82,10 +82,9 @@ interface TerminalSession {
 - [ ] Daytona — 检查 SDK 是否有快照 API
 - [ ] Fly.io — 不原生支持，考虑 volume snapshot 或跳过
 
-### uploadArchive / downloadArchive
+### ~~uploadArchive / downloadArchive~~ ✅
 
-- [ ] Fly.io — 通过 exec + base64 实现，或引入 SFTP
-- [ ] Cloudflare — 检查 `@cloudflare/sandbox` 的 archive API
+- [x] 所有 provider — 通过 `uploadArchiveViaExec` / `downloadArchiveViaExec` exec fallback 自动获得能力
 
 ---
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { createProvider } from '../src/provider.js'
-import { CapabilityNotSupportedError, ProviderError, SandboxError } from '../src/errors.js'
+
 import type { SandboxAdapter, AdapterSandbox, Capability } from '../src/types.js'
 
 function mockAdapterSandbox(overrides: Partial<AdapterSandbox> = {}): AdapterSandbox {
@@ -115,20 +115,62 @@ describe('createProvider', () => {
     expect(adapter.destroySandbox).toHaveBeenCalledWith('sb-mock')
   })
 
-  it('uploadArchive throws SandboxError when not implemented', async () => {
-    const adapter = mockAdapter()
+  it('uploadArchive falls back to exec when adapter has no uploadArchive', async () => {
+    const execFn = vi.fn(async () => ({ exitCode: 0, stdout: '', stderr: '' }))
+    const adapter = mockAdapter({
+      createSandbox: async () => mockAdapterSandbox({ exec: execFn }),
+    })
     const provider = createProvider(adapter)
     const sandbox = await provider.create({ image: 'node:22' })
-    expect(() => sandbox.uploadArchive(new Uint8Array([1]))).toThrow(SandboxError)
-    expect(() => sandbox.uploadArchive(new Uint8Array([1]))).toThrow(/uploadArchive is not supported/)
+    await sandbox.uploadArchive(new Uint8Array([1, 2, 3]))
+    // exec fallback should have been called (write + extract + cleanup)
+    expect(execFn).toHaveBeenCalled()
   })
 
-  it('downloadArchive throws SandboxError when not implemented', async () => {
-    const adapter = mockAdapter()
+  it('uploadArchive uses native when adapter provides it', async () => {
+    const nativeUpload = vi.fn(async () => {})
+    const adapter = mockAdapter({
+      createSandbox: async () => mockAdapterSandbox({ uploadArchive: nativeUpload }),
+    })
     const provider = createProvider(adapter)
     const sandbox = await provider.create({ image: 'node:22' })
-    expect(() => sandbox.downloadArchive()).toThrow(SandboxError)
-    expect(() => sandbox.downloadArchive()).toThrow(/downloadArchive is not supported/)
+    const data = new Uint8Array([1, 2, 3])
+    await sandbox.uploadArchive(data, '/tmp')
+    expect(nativeUpload).toHaveBeenCalledWith(data, '/tmp')
+  })
+
+  it('downloadArchive falls back to exec when adapter has no downloadArchive', async () => {
+    const base64Content = btoa('fake-tar-data')
+    let callCount = 0
+    const execFn = vi.fn(async () => {
+      callCount++
+      if (callCount === 2) {
+        // base64 read
+        return { exitCode: 0, stdout: base64Content + '\n', stderr: '' }
+      }
+      return { exitCode: 0, stdout: '', stderr: '' }
+    })
+    const adapter = mockAdapter({
+      createSandbox: async () => mockAdapterSandbox({ exec: execFn }),
+    })
+    const provider = createProvider(adapter)
+    const sandbox = await provider.create({ image: 'node:22' })
+    const stream = await sandbox.downloadArchive()
+    expect(stream).toBeInstanceOf(ReadableStream)
+    expect(execFn).toHaveBeenCalled()
+  })
+
+  it('downloadArchive uses native when adapter provides it', async () => {
+    const fakeStream = new ReadableStream()
+    const nativeDownload = vi.fn(async () => fakeStream)
+    const adapter = mockAdapter({
+      createSandbox: async () => mockAdapterSandbox({ downloadArchive: nativeDownload }),
+    })
+    const provider = createProvider(adapter)
+    const sandbox = await provider.create({ image: 'node:22' })
+    const result = await sandbox.downloadArchive('/workspace')
+    expect(result).toBe(fakeStream)
+    expect(nativeDownload).toHaveBeenCalledWith('/workspace')
   })
 
   it('exposes volume methods when adapter declares volumes capability and has methods', async () => {

@@ -57,7 +57,7 @@ export {
 export { connectTerminal } from './terminal.js'
 
 // File helpers (for adapter authors)
-export { writeFileViaExec, readFileViaExec } from './file-helpers.js'
+export { writeFileViaExec, readFileViaExec, uploadArchiveViaExec, downloadArchiveViaExec } from './file-helpers.js'
 
 // Session types
 export type {

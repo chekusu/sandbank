@@ -64,6 +64,46 @@ function createStatefulSandbox() {
           .map(k => k.split('/').pop())
         return { success: true, exitCode: 0, stdout: files.join('\n') + '\n', stderr: '' }
       }
+      // mkdir -p
+      if (command.startsWith('mkdir -p ')) {
+        return { success: true, exitCode: 0, stdout: '', stderr: '' }
+      }
+      // printf '...' | base64 -d > <path> (used by archive upload)
+      const printfMatch = command.match(/^printf '%s' '(.*)' \| base64 -d > (.+)$/)
+      if (printfMatch) {
+        const b64 = printfMatch[1]!.replace(/'\\''/, "'")
+        const path = printfMatch[2]!
+        const decoded = atob(b64)
+        fs.set(path, decoded)
+        return { success: true, exitCode: 0, stdout: '', stderr: '' }
+      }
+      // tar xzf <archive> -C <dir> (simulate by marking extraction done)
+      if (command.startsWith('tar xzf ') && command.includes(' -C ')) {
+        return { success: true, exitCode: 0, stdout: '', stderr: '' }
+      }
+      // tar czf <archive> -C <dir> . (simulate creating an archive)
+      const tarCzfMatch = command.match(/^tar czf (.+) -C '?([^']+)'? \.$/)
+      if (tarCzfMatch) {
+        const archivePath = tarCzfMatch[1]!
+        fs.set(archivePath, 'fake-tar-content')
+        return { success: true, exitCode: 0, stdout: '', stderr: '' }
+      }
+      // base64 <path> (used by archive download)
+      const base64Match = command.match(/^base64 (.+)$/)
+      if (base64Match) {
+        const path = base64Match[1]!
+        const content = fs.get(path)
+        if (content === undefined) {
+          return { success: false, exitCode: 1, stdout: '', stderr: `base64: ${path}: No such file or directory` }
+        }
+        return { success: true, exitCode: 0, stdout: btoa(content) + '\n', stderr: '' }
+      }
+      // rm -f <path>
+      if (command.startsWith('rm -f ')) {
+        const path = command.slice(6).trim()
+        fs.delete(path)
+        return { success: true, exitCode: 0, stdout: '', stderr: '' }
+      }
       // Default: succeed
       return { success: true, exitCode: 0, stdout: '', stderr: '' }
     }),
@@ -390,6 +430,56 @@ describe('CloudflareAdapter integration', () => {
 
       const readBack = await sandbox.readFile('/tmp/overwrite.txt')
       expect(new TextDecoder().decode(readBack)).toBe('second')
+    })
+  })
+
+  // ─── uploadArchive / downloadArchive (via exec fallback) ───
+
+  describe('archive operations', () => {
+    it('uploadArchive calls exec with base64 and tar commands', async () => {
+      const sandbox = await provider.create({ image: 'node:22' })
+      const data = new Uint8Array([1, 2, 3, 4])
+
+      await sandbox.uploadArchive(data, '/tmp/dest')
+
+      // Verify exec was called with archive-related commands
+      const execCalls = currentSandbox.exec.mock.calls.map((c: unknown[]) => c[0] as string)
+      expect(execCalls.some((c: string) => c.includes('base64 -d'))).toBe(true)
+      expect(execCalls.some((c: string) => c.includes('tar xzf'))).toBe(true)
+      expect(execCalls.some((c: string) => c.includes('rm -f'))).toBe(true)
+    })
+
+    it('downloadArchive returns a ReadableStream', async () => {
+      const sandbox = await provider.create({ image: 'node:22' })
+
+      // Pre-populate a fake tar file so base64 command succeeds
+      currentSandbox._fs.set('/tmp/_sb_archive.tar.gz', 'fake-tar-content')
+
+      const stream = await sandbox.downloadArchive('/tmp/src')
+      expect(stream).toBeInstanceOf(ReadableStream)
+
+      // Read the stream
+      const reader = stream.getReader()
+      const chunks: Uint8Array[] = []
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        chunks.push(value)
+      }
+      expect(chunks.length).toBeGreaterThan(0)
+    })
+
+    it('upload → download round-trip via exec fallback', async () => {
+      const sandbox = await provider.create({ image: 'node:22' })
+      const originalData = new Uint8Array([10, 20, 30, 40, 50])
+
+      // Upload
+      await sandbox.uploadArchive(originalData, '/tmp/rt-dest')
+
+      // The tar xzf mock doesn't actually extract, but we can verify
+      // the tar.gz was written to the temp file by the printf|base64 command
+      const execCalls = currentSandbox.exec.mock.calls.map((c: unknown[]) => c[0] as string)
+      expect(execCalls.some((c: string) => c.includes("tar xzf /tmp/_sb_archive.tar.gz -C '/tmp/rt-dest'"))).toBe(true)
     })
   })
 

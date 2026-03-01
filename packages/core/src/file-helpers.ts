@@ -57,3 +57,106 @@ export async function readFileViaExec(
   }
   return bytes
 }
+
+/**
+ * 基于 exec 的 uploadArchive 默认实现。
+ * 将 tar.gz 数据 base64 编码后传输并解压。
+ */
+export async function uploadArchiveViaExec(
+  sandbox: AdapterSandbox,
+  archive: Uint8Array | ReadableStream,
+  destDir?: string,
+): Promise<void> {
+  // ReadableStream → Uint8Array
+  let bytes: Uint8Array
+  if (archive instanceof Uint8Array) {
+    bytes = archive
+  } else {
+    const reader = (archive as ReadableStream<Uint8Array>).getReader()
+    const chunks: Uint8Array[] = []
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      chunks.push(value)
+    }
+    const totalLength = chunks.reduce((sum, c) => sum + c.length, 0)
+    bytes = new Uint8Array(totalLength)
+    let offset = 0
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset)
+      offset += chunk.length
+    }
+  }
+
+  // base64 编码
+  let binary = ''
+  const chunkSize = 8192
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize))
+  }
+  const base64 = btoa(binary)
+
+  const target = destDir ?? '/'
+  const tmp = '/tmp/_sb_archive.tar.gz'
+
+  // 写入临时文件
+  const writeResult = await sandbox.exec(`printf '%s' ${shellEscape(base64)} | base64 -d > ${tmp}`)
+  if (writeResult.exitCode !== 0) {
+    throw new Error(`uploadArchive: write failed: ${writeResult.stderr}`)
+  }
+
+  // 解压
+  const extractResult = await sandbox.exec(`tar xzf ${tmp} -C ${shellEscape(target)}`)
+  if (extractResult.exitCode !== 0) {
+    await sandbox.exec(`rm -f ${tmp}`)
+    throw new Error(`uploadArchive: extract failed: ${extractResult.stderr}`)
+  }
+
+  // 清理
+  await sandbox.exec(`rm -f ${tmp}`)
+}
+
+/**
+ * 基于 exec 的 downloadArchive 默认实现。
+ * 将指定目录打包为 tar.gz 并通过 base64 传输。
+ */
+export async function downloadArchiveViaExec(
+  sandbox: AdapterSandbox,
+  srcDir?: string,
+): Promise<ReadableStream> {
+  const source = srcDir ?? '/workspace'
+  const tmp = '/tmp/_sb_archive.tar.gz'
+
+  // 打包
+  const tarResult = await sandbox.exec(`tar czf ${tmp} -C ${shellEscape(source)} .`)
+  if (tarResult.exitCode !== 0) {
+    await sandbox.exec(`rm -f ${tmp}`)
+    throw new Error(`downloadArchive: tar failed: ${tarResult.stderr}`)
+  }
+
+  // 读取 base64
+  const readResult = await sandbox.exec(`base64 ${tmp}`)
+  if (readResult.exitCode !== 0) {
+    await sandbox.exec(`rm -f ${tmp}`)
+    throw new Error(`downloadArchive: read failed: ${readResult.stderr}`)
+  }
+
+  // 清理
+  await sandbox.exec(`rm -f ${tmp}`)
+
+  // 解码为 Uint8Array
+  const clean = readResult.stdout.replace(/\s/g, '')
+  const binaryStr = atob(clean)
+  const bytes = new Uint8Array(binaryStr.length)
+  for (let i = 0; i < binaryStr.length; i++) {
+    bytes[i] = binaryStr.charCodeAt(i)
+  }
+
+  // 包装为 ReadableStream
+  return new ReadableStream({
+    start(controller) {
+      controller.enqueue(bytes)
+      controller.close()
+    },
+  })
+}
