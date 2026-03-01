@@ -13,6 +13,7 @@ import { DaytonaAdapter } from '../src/index.js'
 
 const API_KEY = process.env['DAYTONA_API_KEY'] ?? ''
 const API_URL = process.env['DAYTONA_API_URL'] ?? 'https://app.daytona.io/api'
+const skip = !API_KEY
 
 const adapter = new DaytonaAdapter({ apiKey: API_KEY, apiUrl: API_URL })
 const provider = createProvider(adapter)
@@ -29,7 +30,7 @@ afterAll(async () => {
   }
 })
 
-describe('DaytonaAdapter integration', () => {
+describe.skipIf(skip)('DaytonaAdapter integration', () => {
   // ─── Adapter identity ───
 
   it('adapter has correct name and capabilities', () => {

@@ -94,8 +94,8 @@ interface TerminalSession {
 - [x] GitHub Actions CI — typecheck + test（PR 触发）
 - [x] 集成测试 CI — 用 secrets 跑真实 API 测试（每周定时 + 手动触发）
 - [x] npm 发布流水线 — 通过 git tag `v*` 触发自动发布
-- [ ] CHANGELOG.md — 引入 changesets 或手动维护
-- [ ] 各子包独立 README — npm 页面展示用
+- [x] CHANGELOG.md — 手动维护
+- [x] 各子包独立 README — 6 个包均已创建
 
 ---
 
