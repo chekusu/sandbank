@@ -76,7 +76,7 @@ await provider.destroy(sandbox.id)
 | `port.expose` | ✅ | ✅ | ✅ | 将沙箱端口暴露到公网 |
 | `exec.stream` | ❌ | ❌ | ✅ | 实时流式输出 stdout/stderr |
 | `snapshot` | ❌ | ❌ | ✅ | 沙箱状态快照与恢复 |
-| `terminal` | ❌ | ❌ | ❌ | 交互式 Web 终端 |
+| `terminal` | ✅ | ✅ | ✅ | 交互式 Web 终端 (ttyd) |
 | `sleep` | ❌ | ❌ | ❌ | 休眠与唤醒 |
 
 ### Provider 特性对比

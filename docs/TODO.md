@@ -2,11 +2,11 @@
 
 > 项目待办事项追踪。按优先级排列。
 
-## P0 — Terminal 能力实现
+## P0 — Terminal 能力增强
 
 核心需求：Live 平台需要沙箱内的交互式终端（PTY 双向流式 I/O）。
 
-当前状态：`@sandbank/core` 已定义 `TerminalSandbox` 接口和 `withTerminal()` 检测函数，但**三个 Provider 都没有实现**。
+当前状态：三个 Provider 均已实现基础 `startTerminal()`（基于 ttyd，返回 WebSocket URL），但 **SDK 层面的 `TerminalSession` 双向 PTY 封装尚未实现**。
 
 ### 现有接口
 
@@ -91,9 +91,9 @@ interface TerminalSession {
 
 ## P2 — 发布与基建
 
-- [ ] GitHub Actions CI — lint + typecheck + test（PR 触发）
-- [ ] 集成测试 CI — 用 secrets 跑真实 API 测试（定时/手动触发）
-- [ ] npm 发布流水线 — changesets 或手动 `pnpm publish`
+- [x] GitHub Actions CI — typecheck + test（PR 触发）
+- [x] 集成测试 CI — 用 secrets 跑真实 API 测试（每周定时 + 手动触发）
+- [x] npm 发布流水线 — 通过 git tag `v*` 触发自动发布
 - [ ] CHANGELOG.md — 引入 changesets 或手动维护
 - [ ] 各子包独立 README — npm 页面展示用
 
@@ -110,11 +110,12 @@ interface TerminalSession {
 ## 已完成
 
 - [x] Core 接口设计与实现
-- [x] Daytona 适配器（volumes + port.expose）
-- [x] Fly.io 适配器（volumes + port.expose + 真实 API 测试）
-- [x] Cloudflare 适配器（exec.stream + snapshot + volumes + port.expose）
+- [x] Daytona 适配器（volumes + port.expose + terminal）
+- [x] Fly.io 适配器（volumes + port.expose + terminal + 真实 API 测试）
+- [x] Cloudflare 适配器（exec.stream + snapshot + volumes + port.expose + terminal）
 - [x] Relay 通信系统（WebSocket + JSON-RPC 2.0）
 - [x] Agent 客户端 + CLI
 - [x] 跨 Provider 一致性测试（38+ 测试）
 - [x] README 三语版本（EN / ZH / JA）
 - [x] package.json 发布元数据
+- [x] 三个 Provider 基础 terminal 实现（ttyd 方案）

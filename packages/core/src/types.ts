@@ -136,6 +136,25 @@ export interface TerminalInfo {
   port: number
 }
 
+export interface Disposable {
+  dispose(): void
+}
+
+export interface TerminalSession {
+  /** 向 PTY 发送输入 */
+  write(data: string): void
+  /** 监听 PTY 输出 */
+  onData(cb: (data: string) => void): Disposable
+  /** 调整终端尺寸 */
+  resize(cols: number, rows: number): void
+  /** 关闭连接 */
+  close(): void
+  /** 连接状态 */
+  readonly state: 'connecting' | 'open' | 'closed'
+  /** 连接打开时 resolve */
+  readonly ready: Promise<void>
+}
+
 export interface SleepableSandbox extends Sandbox {
   sleep(): Promise<void>
   wake(): Promise<void>

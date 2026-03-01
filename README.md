@@ -76,7 +76,7 @@ Capabilities are opt-in. Use `withVolumes(provider)`, `withPortExpose(sandbox)`,
 | `port.expose` | ✅ | ✅ | ✅ | Expose sandbox ports to the internet |
 | `exec.stream` | ❌ | ❌ | ✅ | Stream stdout/stderr in real-time |
 | `snapshot` | ❌ | ❌ | ✅ | Snapshot and restore sandbox state |
-| `terminal` | ❌ | ❌ | ❌ | Interactive web terminal |
+| `terminal` | ✅ | ✅ | ✅ | Interactive web terminal (ttyd) |
 | `sleep` | ❌ | ❌ | ❌ | Hibernate and wake sandboxes |
 
 ### Provider Characteristics

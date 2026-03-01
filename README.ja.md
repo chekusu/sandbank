@@ -76,7 +76,7 @@ await provider.destroy(sandbox.id)
 | `port.expose` | ✅ | ✅ | ✅ | サンドボックスポートをインターネットに公開 |
 | `exec.stream` | ❌ | ❌ | ✅ | stdout/stderr のリアルタイムストリーミング |
 | `snapshot` | ❌ | ❌ | ✅ | サンドボックス状態のスナップショットと復元 |
-| `terminal` | ❌ | ❌ | ❌ | インタラクティブ Web ターミナル |
+| `terminal` | ✅ | ✅ | ✅ | インタラクティブ Web ターミナル (ttyd) |
 | `sleep` | ❌ | ❌ | ❌ | サンドボックスの休止と復帰 |
 
 ### プロバイダー特性比較

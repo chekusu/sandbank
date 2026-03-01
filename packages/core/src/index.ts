@@ -15,6 +15,8 @@ export type {
   TerminalSandbox,
   TerminalOptions,
   TerminalInfo,
+  TerminalSession,
+  Disposable,
   SleepableSandbox,
   PortExposeSandbox,
   SnapshotSandbox,
@@ -50,6 +52,9 @@ export {
   ProviderError,
   CapabilityNotSupportedError,
 } from './errors.js'
+
+// Terminal session
+export { connectTerminal } from './terminal.js'
 
 // File helpers (for adapter authors)
 export { writeFileViaExec, readFileViaExec } from './file-helpers.js'
