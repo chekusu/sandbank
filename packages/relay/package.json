@@ -6,7 +6,7 @@
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "https://github.com/chekusu/sandbank.dev.git",
+    "url": "https://github.com/chekusu/sandbank.git",
     "directory": "packages/relay"
   },
   "keywords": ["sandbox", "ai-agent", "relay", "websocket", "multi-agent"],
