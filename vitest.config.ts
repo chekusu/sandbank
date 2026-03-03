@@ -7,6 +7,7 @@ export default defineConfig({
       '@sandbank/core': resolve(__dirname, 'packages/core/src/index.ts'),
       '@sandbank/relay': resolve(__dirname, 'packages/relay/src/index.ts'),
       '@sandbank/agent': resolve(__dirname, 'packages/agent/src/index.ts'),
+      '@sandbank/boxlite': resolve(__dirname, 'packages/boxlite/src/index.ts'),
     },
   },
   test: {

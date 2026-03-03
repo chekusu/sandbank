@@ -8,6 +8,7 @@
  *   DAYTONA_API_KEY  + DAYTONA_API_URL (optional) → Daytona provider
  *   E2E_WORKER_URL                                → Cloudflare provider (via HTTP adapter)
  *   FLY_API_TOKEN + FLY_APP_NAME                  → Fly.io provider
+ *   BOXLITE_API_TOKEN + BOXLITE_API_URL           → BoxLite provider
  *
  * - None set     → all tests skip
  * - One set      → that provider's conformance tests run; hot-swap skips
@@ -54,6 +55,18 @@ if (process.env.FLY_API_TOKEN && process.env.FLY_APP_NAME) {
     region: process.env.FLY_REGION,
   })
   providers.push({ name: 'flyio', provider: createProvider(adapter) })
+}
+
+if (process.env.BOXLITE_API_URL && (process.env.BOXLITE_API_TOKEN || (process.env.BOXLITE_CLIENT_ID && process.env.BOXLITE_CLIENT_SECRET))) {
+  const { BoxLiteAdapter } = await import('@sandbank/boxlite')
+  const adapter = new BoxLiteAdapter({
+    apiUrl: process.env.BOXLITE_API_URL,
+    prefix: process.env.BOXLITE_PREFIX,
+    ...(process.env.BOXLITE_API_TOKEN
+      ? { apiToken: process.env.BOXLITE_API_TOKEN }
+      : { clientId: process.env.BOXLITE_CLIENT_ID, clientSecret: process.env.BOXLITE_CLIENT_SECRET }),
+  })
+  providers.push({ name: 'boxlite', provider: createProvider(adapter) })
 }
 
 // ---------------------------------------------------------------------------
@@ -365,7 +378,7 @@ describe('hot-swap: switch providers mid-session', () => {
 
 if (providers.length === 0) {
   describe('conformance (skipped)', () => {
-    it('no providers configured — set DAYTONA_API_KEY, E2E_WORKER_URL, and/or FLY_API_TOKEN + FLY_APP_NAME', () => {
+    it('no providers configured — set DAYTONA_API_KEY, E2E_WORKER_URL, FLY_API_TOKEN + FLY_APP_NAME, and/or BOXLITE_API_TOKEN + BOXLITE_API_URL', () => {
       expect(true).toBe(true)
     })
   })
