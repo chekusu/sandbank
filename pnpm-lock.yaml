@@ -114,13 +114,13 @@ importers:
 
   packages/relay:
     dependencies:
-      '@sandbank/core':
-        specifier: workspace:*
-        version: link:../core
       ws:
         specifier: ^8.18.0
         version: 8.19.0
     devDependencies:
+      '@sandbank/core':
+        specifier: workspace:*
+        version: link:../core
       '@types/ws':
         specifier: ^8.18.0
         version: 8.18.1

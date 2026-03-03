@@ -26,6 +26,7 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@sandbank/core": "workspace:*",
     "@types/ws": "^8.18.0",
     "typescript": "^5.7.3"
   },
