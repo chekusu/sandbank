@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { Transport } from '@sandbank/core'
-import { resetIdCounter } from '../src/rpc.js'
 
 // --- Mock transport module ---
 const mockListeners: Array<(data: string) => void> = []
@@ -40,7 +39,6 @@ describe('connect', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockListeners.length = 0
-    resetIdCounter()
     delete process.env['SANDBANK_WS_URL']
     delete process.env['SANDBANK_SESSION_ID']
     delete process.env['SANDBANK_SANDBOX_NAME']

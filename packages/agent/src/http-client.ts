@@ -5,7 +5,7 @@ export interface HttpClientConfig {
   relayUrl: string
   sessionId: string
   sandboxName: string
-  token?: string
+  token: string
 }
 
 function getConfig(): HttpClientConfig {
@@ -17,6 +17,7 @@ function getConfig(): HttpClientConfig {
   if (!relayUrl) throw new Error('Missing SANDBANK_RELAY_URL')
   if (!sessionId) throw new Error('Missing SANDBANK_SESSION_ID')
   if (!sandboxName) throw new Error('Missing SANDBANK_SANDBOX_NAME')
+  if (!token) throw new Error('Missing SANDBANK_AUTH_TOKEN')
 
   return { relayUrl, sessionId, sandboxName, token }
 }
@@ -31,7 +32,7 @@ async function rpcCall(method: string, params?: Record<string, unknown>): Promis
       'Content-Type': 'application/json',
       'X-Session-Id': config.sessionId,
       'X-Sandbox-Name': config.sandboxName,
-      ...(config.token ? { 'X-Auth-Token': config.token } : {}),
+      'X-Auth-Token': config.token,
     },
     body: JSON.stringify(request),
   })

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { Transport } from '@sandbank/core'
-import { RpcPendingMap, resetIdCounter } from '../src/rpc.js'
+import { RpcPendingMap } from '../src/rpc.js'
 import { createWsContextClient } from '../src/context-client.js'
 
 function createMockTransport() {
@@ -32,7 +32,6 @@ describe('createWsContextClient', () => {
   beforeEach(() => {
     mock = createMockTransport()
     pending = new RpcPendingMap()
-    resetIdCounter()
   })
 
   it('get() should send context.get RPC and return value', async () => {

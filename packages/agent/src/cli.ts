@@ -178,7 +178,7 @@ Environment variables:
   SANDBANK_RELAY_URL     Relay HTTP URL
   SANDBANK_SESSION_ID    Session ID
   SANDBANK_SANDBOX_NAME  This sandbox's name
-  SANDBANK_AUTH_TOKEN    Auth token (optional)`)
+  SANDBANK_AUTH_TOKEN    Auth token (required)`)
 }
 
 main().catch((err) => {

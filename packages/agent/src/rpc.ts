@@ -1,11 +1,9 @@
 import type { JsonRpcRequest, JsonRpcResponse } from '@sandbank/core'
 
-let nextId = 1
-
 export function createRequest(method: string, params?: Record<string, unknown>): JsonRpcRequest {
   return {
     jsonrpc: '2.0',
-    id: nextId++,
+    id: crypto.randomUUID(),
     method,
     ...(params ? { params } : {}),
   }
@@ -18,9 +16,16 @@ export class RpcPendingMap {
     reject: (error: Error) => void
   }>()
 
-  add(id: number | string): Promise<unknown> {
+  add(id: number | string, timeoutMs = 30_000): Promise<unknown> {
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject })
+      const timer = setTimeout(() => {
+        this.pending.delete(id)
+        reject(new Error(`RPC timeout (${timeoutMs}ms)`))
+      }, timeoutMs)
+      this.pending.set(id, {
+        resolve: (result) => { clearTimeout(timer); resolve(result) },
+        reject: (err) => { clearTimeout(timer); reject(err) },
+      })
     })
   }
 
@@ -46,7 +51,3 @@ export class RpcPendingMap {
   }
 }
 
-/** 重置 ID 计数器（测试用） */
-export function resetIdCounter(): void {
-  nextId = 1
-}

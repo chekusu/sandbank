@@ -46,8 +46,9 @@ export async function connect(options: ConnectOptions = {}): Promise<AgentSessio
     token: token ?? undefined,
     role: 'agent',
   })
+  const authPromise = pending.add(authReq.id)
   transport.send(JSON.stringify(authReq))
-  const authResult = await pending.add(authReq.id) as { ok: boolean }
+  const authResult = await authPromise as { ok: boolean }
   if (!authResult.ok) throw new Error('Authentication failed')
 
   const context = createWsContextClient(transport, pending)
@@ -60,8 +61,9 @@ export async function connect(options: ConnectOptions = {}): Promise<AgentSessio
         payload: payload ?? null,
         priority: opts?.priority ?? 'normal',
       })
+      const promise = pending.add(req.id)
       transport.send(JSON.stringify(req))
-      await pending.add(req.id)
+      await promise
     },
 
     async broadcast(type, payload, opts) {
@@ -70,8 +72,9 @@ export async function connect(options: ConnectOptions = {}): Promise<AgentSessio
         payload: payload ?? null,
         priority: opts?.priority ?? 'normal',
       })
+      const promise = pending.add(req.id)
       transport.send(JSON.stringify(req))
-      await pending.add(req.id)
+      await promise
     },
 
     async recv(opts) {
@@ -79,8 +82,9 @@ export async function connect(options: ConnectOptions = {}): Promise<AgentSessio
         limit: opts?.limit ?? 100,
         wait: opts?.wait ?? 0,
       })
+      const promise = pending.add(req.id)
       transport.send(JSON.stringify(req))
-      const result = await pending.add(req.id) as { messages: AgentMessage[] }
+      const result = await promise as { messages: AgentMessage[] }
       return result.messages
     },
 
@@ -102,8 +106,9 @@ export async function connect(options: ConnectOptions = {}): Promise<AgentSessio
         status: result.status,
         summary: result.summary,
       })
+      const promise = pending.add(req.id)
       transport.send(JSON.stringify(req))
-      await pending.add(req.id)
+      await promise
     },
 
     close() {

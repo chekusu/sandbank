@@ -69,8 +69,8 @@ describe('createWebSocketTransport', () => {
     // …then fire an error.  The promise is already resolved, so this should
     // not throw or cause an unhandled rejection.
     expect(() => mockWs._emit('error')).not.toThrow()
-    // readyState stays 'open' (only close changes it)
-    expect(transport.readyState).toBe('open')
+    // readyState changes to 'closed' on error to prevent sends on broken socket
+    expect(transport.readyState).toBe('closed')
   })
 
   it('should delegate send() to ws.send()', async () => {

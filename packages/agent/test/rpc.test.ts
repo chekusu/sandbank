@@ -1,25 +1,19 @@
-import { describe, it, expect, beforeEach } from 'vitest'
-import { createRequest, RpcPendingMap, resetIdCounter } from '../src/rpc.js'
+import { describe, it, expect } from 'vitest'
+import { createRequest, RpcPendingMap } from '../src/rpc.js'
 
 describe('createRequest', () => {
-  beforeEach(() => {
-    resetIdCounter()
-  })
-
   it('should create a valid JSON-RPC request', () => {
     const req = createRequest('message.send', { to: 'backend', type: 'task' })
-    expect(req).toEqual({
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'message.send',
-      params: { to: 'backend', type: 'task' },
-    })
+    expect(req.jsonrpc).toBe('2.0')
+    expect(req.method).toBe('message.send')
+    expect(req.params).toEqual({ to: 'backend', type: 'task' })
+    expect(typeof req.id).toBe('string')
   })
 
-  it('should auto-increment IDs', () => {
+  it('should generate unique IDs', () => {
     const r1 = createRequest('a')
     const r2 = createRequest('b')
-    expect(r2.id).toBe((r1.id as number) + 1)
+    expect(r1.id).not.toBe(r2.id)
   })
 
   it('should omit params if not provided', () => {

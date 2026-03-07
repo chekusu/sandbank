@@ -16,6 +16,7 @@ export function createWebSocketTransport(url: string): Promise<Transport> {
       if (state === 'connecting') {
         reject(new Error(`WebSocket connection failed: ${url}`))
       }
+      state = 'closed'
     })
 
     ws.addEventListener('message', (evt) => {
@@ -31,6 +32,9 @@ export function createWebSocketTransport(url: string): Promise<Transport> {
 
     const transport: Transport = {
       send(data: string) {
+        if (state !== 'open') {
+          throw new Error('WebSocket is not open')
+        }
         ws.send(data)
       },
       onMessage(fn: (data: string) => void) {
