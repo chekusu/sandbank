@@ -16,6 +16,7 @@ import type {
   VolumeProvider,
 } from './types.js'
 import { CapabilityNotSupportedError, ProviderError } from './errors.js'
+import { injectSkills } from './skill-inject.js'
 import { readFileViaExec, writeFileViaExec, uploadArchiveViaExec, downloadArchiveViaExec } from './file-helpers.js'
 
 /**
@@ -129,7 +130,13 @@ export function createProvider(adapter: SandboxAdapter): SandboxProvider {
 
     async create(config: CreateConfig): Promise<Sandbox> {
       const raw = await adapter.createSandbox(config)
-      return wrapSandbox(raw, adapter.name)
+      const sandbox = wrapSandbox(raw, adapter.name)
+
+      if (config.skills?.length) {
+        await injectSkills(sandbox, config.skills)
+      }
+
+      return sandbox
     },
 
     async get(id: string): Promise<Sandbox> {

@@ -26,6 +26,8 @@ export type {
   // Adapter
   SandboxAdapter,
   AdapterSandbox,
+  // Skill
+  SkillDefinition,
 } from './types.js'
 
 // Provider factory
@@ -55,6 +57,9 @@ export {
 
 // Terminal session
 export { connectTerminal } from './terminal.js'
+
+// Skill injection
+export { injectSkills } from './skill-inject.js'
 
 // File helpers (for adapter authors)
 export { writeFileViaExec, readFileViaExec, uploadArchiveViaExec, downloadArchiveViaExec } from './file-helpers.js'

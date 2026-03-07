@@ -20,6 +20,13 @@ export interface SandboxProvider {
   destroy(id: string): Promise<void>
 }
 
+export interface SkillDefinition {
+  /** Skill 名称，用作文件名（不含 .md 后缀） */
+  name: string
+  /** Skill 内容（markdown 文本） */
+  content: string
+}
+
 export interface CreateConfig {
   /** 容器镜像（如 'node:22-slim', 'ubuntu:24.04'） */
   image: string
@@ -48,6 +55,12 @@ export interface CreateConfig {
 
   /** 创建超时（秒）。默认由 provider 决定（Daytona 默认 60s） */
   timeout?: number
+
+  /**
+   * 注入到沙箱的 skill 文件列表。
+   * 每个 skill 会被写入沙箱的 `~/.claude/skills/` 目录。
+   */
+  skills?: SkillDefinition[]
 }
 
 export interface ListFilter {
