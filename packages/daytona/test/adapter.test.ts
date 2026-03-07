@@ -35,7 +35,7 @@ const mockDaytona = {
 }
 
 vi.mock('@daytonaio/sdk', () => ({
-  Daytona: vi.fn(() => mockDaytona),
+  Daytona: vi.fn(function () { return mockDaytona }),
 }))
 
 import { DaytonaAdapter } from '../src/adapter.js'

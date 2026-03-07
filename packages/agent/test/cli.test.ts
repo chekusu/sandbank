@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
-// --- Mock http-client module ---
+// --- Stable mock references that survive vi.resetModules() ---
 const mockSendMessage = vi.fn().mockResolvedValue(undefined)
 const mockRecvMessages = vi.fn().mockResolvedValue([])
 const mockContextGet = vi.fn().mockResolvedValue(null)
@@ -19,9 +19,15 @@ vi.mock('../src/http-client.js', () => ({
   complete: (...args: unknown[]) => mockComplete(...args),
 }))
 
+// Capture originals
+const origArgv = process.argv
+const origLog = console.log
+const origError = console.error
+const origExit = process.exit
+
 /**
- * CLI runs main() on import with side effects (process.argv, process.exit, console).
- * We test by intercepting these globals, then dynamically importing the module.
+ * Run CLI by resetting module cache and re-importing cli.js.
+ * cli.ts calls main() at module level; we intercept process globals to capture output.
  */
 async function runCli(
   args: string[],
@@ -30,31 +36,19 @@ async function runCli(
   const stderr: string[] = []
   let exitCode: number | null = null
 
-  const origArgv = process.argv
-  const origLog = console.log
-  const origError = console.error
-
   process.argv = ['node', 'cli.ts', ...args]
-  // process.exit throws to abort main()
-  const origExit = process.exit
-  process.exit = ((code?: number) => {
-    exitCode = code ?? 0
-    throw new Error(`__EXIT_${code}__`)
-  }) as never
+  // Mock process.exit to capture code without aborting (it's always the last call in each branch)
+  process.exit = ((code?: number) => { exitCode = code ?? 0 }) as never
   console.log = (...a: unknown[]) => stdout.push(a.map(String).join(' '))
   console.error = (...a: unknown[]) => stderr.push(a.map(String).join(' '))
 
   try {
-    // Force re-execution by busting the module cache
-    const timestamp = Date.now() + Math.random()
-    await import(`../src/cli.js?t=${timestamp}`)
+    vi.resetModules()
+    await import('../src/cli.js')
+    // main() is called asynchronously at module level; wait for it to settle
+    await new Promise(r => setTimeout(r, 20))
   } catch (err) {
-    // Expected: either process.exit throw or main() rejection
-    const msg = (err as Error)?.message ?? ''
-    if (!msg.startsWith('__EXIT_')) {
-      // Real error — re-capture
-      stderr.push(msg)
-    }
+    stderr.push((err as Error)?.message ?? String(err))
   } finally {
     process.argv = origArgv
     process.exit = origExit
@@ -68,6 +62,14 @@ async function runCli(
 describe('CLI', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+
+  afterEach(() => {
+    // Restore globals in case a test fails mid-execution
+    process.argv = origArgv
+    process.exit = origExit
+    console.log = origLog
+    console.error = origError
   })
 
   // --- send command ---
@@ -119,7 +121,7 @@ describe('CLI', () => {
     expect(exitCode).toBe(1)
   })
 
-  it('context set should call contextSet', async () => {
+  it('context set should call contextSet with parsed JSON', async () => {
     const { stdout } = await runCli(['context', 'set', 'k1', '{"v":1}'])
     expect(mockContextSet).toHaveBeenCalledWith('k1', { v: 1 })
     expect(stdout).toContain('OK')
