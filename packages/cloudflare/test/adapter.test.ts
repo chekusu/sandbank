@@ -445,7 +445,7 @@ describe('CloudflareAdapter', () => {
       const result = await sandbox.createSnapshot!('my-backup')
 
       expect(mockSandbox.createBackup).toHaveBeenCalledWith({ dir: '/', name: 'my-backup' })
-      expect(result.snapshotId).toMatch(/^snap-/)
+      expect(result.snapshotId).toBe('my-backup')
     })
 
     it('should restore a previously created snapshot', async () => {

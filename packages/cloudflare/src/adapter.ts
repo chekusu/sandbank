@@ -137,7 +137,7 @@ function wrapCloudflareSandbox(
 
     async createSnapshot(name?: string): Promise<{ snapshotId: string }> {
       const backup = await sandbox.createBackup({ dir: '/', name: name ?? undefined })
-      const snapshotId = `snap-${crypto.randomUUID().slice(0, 8)}`
+      const snapshotId = name ?? `snap-${crypto.randomUUID().slice(0, 8)}`
       snapshots.set(snapshotId, backup)
       return { snapshotId }
     },

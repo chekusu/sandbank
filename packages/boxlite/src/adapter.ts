@@ -219,15 +219,23 @@ export class BoxLiteAdapter implements SandboxAdapter {
       }
 
       // Wait for box to be running
+      const maxAttempts = Math.max(1, config.timeout ?? 30)
       let current = box
-      for (let i = 0; i < 30; i++) {
+      for (let i = 0; i < maxAttempts; i++) {
         current = await this.client.getBox(box.box_id)
         if (current.status === 'running') break
         await new Promise(r => setTimeout(r, 1000))
       }
 
+      if (current.status !== 'running') {
+        await this.client.deleteBox(box.box_id, true).catch(() => {})
+        this.portMaps.delete(box.box_id)
+        throw new ProviderError('boxlite', new Error(`Sandbox failed to start within 30s (status: ${current.status})`))
+      }
+
       return wrapBox(current, this.client, this.config, portMap)
     } catch (err) {
+      if (err instanceof ProviderError) throw err
       throw new ProviderError('boxlite', err)
     }
   }

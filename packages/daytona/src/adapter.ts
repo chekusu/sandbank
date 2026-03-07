@@ -138,12 +138,13 @@ function isStateTransition(err: unknown): boolean {
   return msg.includes('state change in progress') || msg.includes('destroying')
 }
 
-/** Poll until a condition returns true, or timeout */
+/** Poll until a condition returns true, or throw on timeout */
 async function waitFor(fn: () => Promise<boolean>, intervalMs = 2000, maxAttempts = 15): Promise<void> {
   for (let i = 0; i < maxAttempts; i++) {
     if (await fn()) return
     await new Promise(r => setTimeout(r, intervalMs))
   }
+  throw new Error(`Timed out after ${maxAttempts * intervalMs}ms waiting for condition`)
 }
 
 export class DaytonaAdapter implements SandboxAdapter {

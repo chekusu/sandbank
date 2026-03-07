@@ -453,6 +453,8 @@ describe('CloudflareAdapter integration', () => {
       const sandbox = await provider.create({ image: 'node:22' })
 
       // Pre-populate a fake tar file so base64 command succeeds
+      // Pre-populate with dynamic key pattern (file-helpers uses random names)
+      // The mock exec will handle any /tmp/_sb_archive_*.tar.gz path
       currentSandbox._fs.set('/tmp/_sb_archive.tar.gz', 'fake-tar-content')
 
       const stream = await sandbox.downloadArchive('/tmp/src')
@@ -479,7 +481,7 @@ describe('CloudflareAdapter integration', () => {
       // The tar xzf mock doesn't actually extract, but we can verify
       // the tar.gz was written to the temp file by the printf|base64 command
       const execCalls = currentSandbox.exec.mock.calls.map((c: unknown[]) => c[0] as string)
-      expect(execCalls.some((c: string) => c.includes("tar xzf /tmp/_sb_archive.tar.gz -C '/tmp/rt-dest'"))).toBe(true)
+      expect(execCalls.some((c: string) => /tar xzf \/tmp\/_sb_archive_\d+_\w+\.tar\.gz -C '\/tmp\/rt-dest'/.test(c))).toBe(true)
     })
   })
 
@@ -553,7 +555,7 @@ describe('CloudflareAdapter integration', () => {
 
       // Create snapshot
       const { snapshotId } = await snapshotable.createSnapshot('before-change')
-      expect(snapshotId).toMatch(/^snap-/)
+      expect(snapshotId).toBe('before-change')
 
       // Modify state
       await sandbox.writeFile('/tmp/state.txt', 'modified')
