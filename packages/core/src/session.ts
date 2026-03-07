@@ -59,6 +59,7 @@ export async function createSession(config: CreateSessionConfig): Promise<Sessio
   const completions = new Map<string, SandboxCompletion>()
   const completionWaiters = new Map<string, Array<{
     resolve: (c: SandboxCompletion) => void
+    reject: (e: Error) => void
     timer?: ReturnType<typeof setTimeout>
   }>>()
 
@@ -118,11 +119,26 @@ export async function createSession(config: CreateSessionConfig): Promise<Sessio
     }
   })
 
+  const RPC_TIMEOUT_MS = 30_000
+
   async function rpcCall(method: string, params?: Record<string, unknown>): Promise<unknown> {
     const req = createRpcRequest(method, params)
-    ws.send(JSON.stringify(req))
     return new Promise((resolve, reject) => {
-      pending.set(req.id, { resolve, reject })
+      const timer = setTimeout(() => {
+        pending.delete(req.id)
+        reject(new Error(`RPC timeout: ${method} (${RPC_TIMEOUT_MS}ms)`))
+      }, RPC_TIMEOUT_MS)
+      pending.set(req.id, {
+        resolve: (result) => { clearTimeout(timer); resolve(result) },
+        reject: (err) => { clearTimeout(timer); reject(err) },
+      })
+      try {
+        ws.send(JSON.stringify(req))
+      } catch (sendErr) {
+        clearTimeout(timer)
+        pending.delete(req.id)
+        reject(sendErr instanceof Error ? sendErr : new Error(String(sendErr)))
+      }
     })
   }
 
@@ -247,7 +263,11 @@ export async function createSession(config: CreateSessionConfig): Promise<Sessio
       if (existing) return Promise.resolve(existing)
 
       return new Promise((resolve, reject) => {
-        const waiter: { resolve: (c: SandboxCompletion) => void; timer?: ReturnType<typeof setTimeout> } = { resolve }
+        const waiter: {
+          resolve: (c: SandboxCompletion) => void
+          reject: (e: Error) => void
+          timer?: ReturnType<typeof setTimeout>
+        } = { resolve, reject }
         if (timeoutMs) {
           waiter.timer = setTimeout(() => {
             const waiters = completionWaiters.get(name)
@@ -276,10 +296,11 @@ export async function createSession(config: CreateSessionConfig): Promise<Sessio
       }
       pending.clear()
 
-      // 清理 waitFor timers
+      // 清理 waitFor：reject 所有挂起的 waiter
       for (const [, waiters] of completionWaiters) {
         for (const w of waiters) {
           if (w.timer) clearTimeout(w.timer)
+          w.reject(new Error('Session closed'))
         }
       }
       completionWaiters.clear()
