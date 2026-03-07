@@ -30,6 +30,10 @@ async function httpRpc(
   }
 
   const sessionId = headers?.['X-Session-Id']
+  // 首次请求时自动生成 token 并缓存
+  if (sessionId && !sessionTokens.has(sessionId)) {
+    sessionTokens.set(sessionId, crypto.randomUUID())
+  }
   const cachedToken = sessionId ? sessionTokens.get(sessionId) : undefined
 
   const res = await fetch(`${url}/rpc`, {

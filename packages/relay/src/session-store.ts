@@ -159,13 +159,14 @@ export class SessionStore {
     queue.push(msg)
     this.touch(session)
 
-    // 检查是否有 long-polling 等待者
+    // 检查是否有 long-polling 等待者（优先于 WebSocket 推送，避免双重投递）
     const waiters = session.pollWaiters.get(to)
     if (waiters && waiters.length > 0) {
       const waiter = waiters.shift()!
       clearTimeout(waiter.timer)
       const msgs = this.drainQueue(session, to)
       waiter.resolve(msgs)
+      return
     }
 
     // WebSocket 实时推送
@@ -188,12 +189,16 @@ export class SessionStore {
     const queue = session.messageQueues.get(sandboxName)
     if (!queue || queue.length === 0) return []
 
-    // steer 优先
-    queue.sort((a, b) => {
-      if (a.priority === 'steer' && b.priority !== 'steer') return -1
-      if (a.priority !== 'steer' && b.priority === 'steer') return 1
-      return 0
-    })
+    // steer 优先，保持插入顺序（stable partition）
+    const steer: QueuedMessage[] = []
+    const normal: QueuedMessage[] = []
+    for (const m of queue) {
+      if (m.priority === 'steer') steer.push(m)
+      else normal.push(m)
+    }
+    const sorted = [...steer, ...normal]
+    queue.length = 0
+    queue.push(...sorted)
 
     this.touch(session)
     const msgs = queue.splice(0, limit)

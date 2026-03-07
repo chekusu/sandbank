@@ -76,14 +76,15 @@ function handleHttp(store: SessionStore, req: IncomingMessage, res: ServerRespon
     return
   }
 
-  // Token 验证：如果 session 已存在，必须提供有效 token
+  // Token 验证：所有请求都必须提供 token
+  if (!authToken) {
+    res.writeHead(403, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Missing X-Auth-Token header' } }))
+    return
+  }
+
   const existingSession = store.getSession(sessionId)
   if (existingSession) {
-    if (!authToken) {
-      res.writeHead(403, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Missing X-Auth-Token for existing session' } }))
-      return
-    }
     if (!store.validateToken(sessionId, authToken)) {
       res.writeHead(403, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Invalid token' } }))
@@ -91,7 +92,7 @@ function handleHttp(store: SessionStore, req: IncomingMessage, res: ServerRespon
     }
   }
 
-  // 确保 session 存在
+  // 确保 session 存在（首次创建时用请求提供的 token）
   const session = store.getOrCreateSession(sessionId, authToken)
   store.touch(session)
 
