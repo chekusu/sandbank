@@ -97,7 +97,7 @@ export async function uploadArchiveViaExec(
   const base64 = btoa(binary)
 
   const target = destDir ?? '/'
-  const tmp = '/tmp/_sb_archive.tar.gz'
+  const tmp = `/tmp/_sb_archive_${Date.now()}_${Math.random().toString(36).slice(2)}.tar.gz`
 
   // 写入临时文件
   const writeResult = await sandbox.exec(`printf '%s' ${shellEscape(base64)} | base64 -d > ${tmp}`)
@@ -125,7 +125,7 @@ export async function downloadArchiveViaExec(
   srcDir?: string,
 ): Promise<ReadableStream> {
   const source = srcDir ?? '/workspace'
-  const tmp = '/tmp/_sb_archive.tar.gz'
+  const tmp = `/tmp/_sb_archive_${Date.now()}_${Math.random().toString(36).slice(2)}.tar.gz`
 
   // 打包
   const tarResult = await sandbox.exec(`tar czf ${tmp} -C ${shellEscape(source)} .`)

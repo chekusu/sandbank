@@ -26,9 +26,9 @@ describe('uploadArchiveViaExec', () => {
     // Should have 3 calls: write, extract, cleanup
     expect(calls).toHaveLength(3)
     expect(calls[0]).toContain('base64 -d')
-    expect(calls[0]).toContain('/tmp/_sb_archive.tar.gz')
-    expect(calls[1]).toBe("tar xzf /tmp/_sb_archive.tar.gz -C '/'")
-    expect(calls[2]).toBe('rm -f /tmp/_sb_archive.tar.gz')
+    expect(calls[0]).toMatch(/\/tmp\/_sb_archive_\d+_\w+\.tar\.gz/)
+    expect(calls[1]).toMatch(/tar xzf \/tmp\/_sb_archive_\d+_\w+\.tar\.gz -C '\/'/)
+    expect(calls[2]).toMatch(/rm -f \/tmp\/_sb_archive_\d+_\w+\.tar\.gz/)
   })
 
   it('uses custom destDir when provided', async () => {
@@ -41,7 +41,7 @@ describe('uploadArchiveViaExec', () => {
 
     await uploadArchiveViaExec(sandbox, new Uint8Array([1, 2, 3]), '/workspace')
 
-    expect(calls[1]).toBe("tar xzf /tmp/_sb_archive.tar.gz -C '/workspace'")
+    expect(calls[1]).toMatch(/tar xzf \/tmp\/_sb_archive_\d+_\w+\.tar\.gz -C '\/workspace'/)
   })
 
   it('handles ReadableStream input', async () => {
@@ -118,9 +118,9 @@ describe('downloadArchiveViaExec', () => {
     const stream = await downloadArchiveViaExec(sandbox)
 
     // Verify commands
-    expect(calls[0]).toBe("tar czf /tmp/_sb_archive.tar.gz -C '/workspace' .")
-    expect(calls[1]).toBe('base64 /tmp/_sb_archive.tar.gz')
-    expect(calls[2]).toBe('rm -f /tmp/_sb_archive.tar.gz')
+    expect(calls[0]).toMatch(/tar czf \/tmp\/_sb_archive_\d+_\w+\.tar\.gz -C '\/workspace' \./)
+    expect(calls[1]).toMatch(/base64 \/tmp\/_sb_archive_\d+_\w+\.tar\.gz/)
+    expect(calls[2]).toMatch(/rm -f \/tmp\/_sb_archive_\d+_\w+\.tar\.gz/)
 
     // Read stream and verify content
     const reader = stream.getReader()
@@ -141,7 +141,7 @@ describe('downloadArchiveViaExec', () => {
 
     await downloadArchiveViaExec(sandbox, '/tmp/mydir')
 
-    expect(calls[0]).toBe("tar czf /tmp/_sb_archive.tar.gz -C '/tmp/mydir' .")
+    expect(calls[0]).toMatch(/tar czf \/tmp\/_sb_archive_\d+_\w+\.tar\.gz -C '\/tmp\/mydir' \./)
   })
 
   it('throws and cleans up on tar failure', async () => {
