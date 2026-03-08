@@ -32,13 +32,16 @@ Swap `DaytonaAdapter` for `FlyioAdapter` or `CloudflareAdapter` — zero code ch
 │  Your Application / AI Agent                         │
 ├──────────────────────────────────────────────────────┤
 │  @sandbank/core         Unified Provider Interface   │
+│  @sandbank/skills       Skill Registry & Injection   │
 │  @sandbank/agent        In-sandbox Agent Client      │
 │  @sandbank/relay        Multi-agent Communication    │
 ├──────────────────────────────────────────────────────┤
-│  @sandbank/daytona   @sandbank/flyio   @sandbank/cloudflare │
+│  @sandbank/daytona  @sandbank/flyio  @sandbank/cloudflare  │
+│  @sandbank/boxlite                                   │
 │  Provider Adapters                                   │
 ├──────────────────────────────────────────────────────┤
-│  Daytona           Fly.io Machines    Cloudflare Workers    │
+│  Daytona    Fly.io Machines    Cloudflare Workers     │
+│  BoxLite (self-hosted Docker)                        │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -47,9 +50,11 @@ Swap `DaytonaAdapter` for `FlyioAdapter` or `CloudflareAdapter` — zero code ch
 | Package | Description |
 |---------|-------------|
 | [`@sandbank/core`](./packages/core) | Provider abstraction, capability system, error types |
+| [`@sandbank/skills`](./packages/skills) | Skill registry and local filesystem loader |
 | [`@sandbank/daytona`](./packages/daytona) | Daytona cloud sandbox adapter |
 | [`@sandbank/flyio`](./packages/flyio) | Fly.io Machines adapter |
 | [`@sandbank/cloudflare`](./packages/cloudflare) | Cloudflare Workers adapter |
+| [`@sandbank/boxlite`](./packages/boxlite) | BoxLite self-hosted Docker adapter |
 | [`@sandbank/relay`](./packages/relay) | WebSocket relay for multi-agent communication |
 | [`@sandbank/agent`](./packages/agent) | Lightweight client for agents running inside sandboxes |
 
@@ -59,35 +64,37 @@ Swap `DaytonaAdapter` for `FlyioAdapter` or `CloudflareAdapter` — zero code ch
 
 All providers implement these — the minimum contract:
 
-| Operation | Daytona | Fly.io | Cloudflare |
-|-----------|:-------:|:------:|:----------:|
-| Create / Destroy | ✅ | ✅ | ✅ |
-| List sandboxes | ✅ | ✅ | ✅ |
-| Execute commands | ✅ | ✅ | ✅ |
-| Read / Write files | ✅ | ✅ | ✅ |
+| Operation | Daytona | Fly.io | Cloudflare | BoxLite |
+|-----------|:-------:|:------:|:----------:|:-------:|
+| Create / Destroy | ✅ | ✅ | ✅ | ✅ |
+| List sandboxes | ✅ | ✅ | ✅ | ✅ |
+| Execute commands | ✅ | ✅ | ✅ | ✅ |
+| Read / Write files | ✅ | ✅ | ✅ | ✅ |
 
 ### Extended Capabilities
 
 Capabilities are opt-in. Use `withVolumes(provider)`, `withPortExpose(sandbox)`, etc. to safely check and access them at runtime.
 
-| Capability | Daytona | Fly.io | Cloudflare | Description |
-|------------|:-------:|:------:|:----------:|-------------|
-| `volumes` | ✅ | ✅ | ✅ | Persistent volume management |
-| `port.expose` | ✅ | ✅ | ✅ | Expose sandbox ports to the internet |
-| `exec.stream` | ❌ | ❌ | ✅ | Stream stdout/stderr in real-time |
-| `snapshot` | ❌ | ❌ | ✅ | Snapshot and restore sandbox state |
-| `terminal` | ✅ | ✅ | ✅ | Interactive web terminal (ttyd) |
-| `sleep` | ❌ | ❌ | ❌ | Hibernate and wake sandboxes |
+| Capability | Daytona | Fly.io | Cloudflare | BoxLite | Description |
+|------------|:-------:|:------:|:----------:|:-------:|-------------|
+| `volumes` | ✅ | ✅ | ⚠️* | ❌ | Persistent volume management |
+| `port.expose` | ✅ | ✅ | ✅ | ✅ | Expose sandbox ports to the internet |
+| `exec.stream` | ❌ | ❌ | ✅ | ✅ | Stream stdout/stderr in real-time |
+| `snapshot` | ❌ | ❌ | ✅ | ✅ | Snapshot and restore sandbox state |
+| `terminal` | ✅ | ✅ | ✅ | ✅ | Interactive web terminal (ttyd) |
+| `sleep` | ❌ | ❌ | ❌ | ✅ | Hibernate and wake sandboxes |
+
+\* Cloudflare `volumes` requires `storage` option in adapter config.
 
 ### Provider Characteristics
 
-| | Daytona | Fly.io | Cloudflare |
-|---|---------|--------|------------|
-| **Runtime** | Full VM | Firecracker microVM | V8 isolate + container |
-| **Cold start** | ~10s | ~3-5s | ~1s |
-| **File I/O** | Native SDK | Via exec (base64) | Native SDK |
-| **Regions** | Multi | Multi | Global edge |
-| **External deps** | `@daytonaio/sdk` | None (pure fetch) | `@cloudflare/sandbox` |
+| | Daytona | Fly.io | Cloudflare | BoxLite |
+|---|---------|--------|------------|---------|
+| **Runtime** | Full VM | Firecracker microVM | V8 isolate + container | Docker container |
+| **Cold start** | ~10s | ~3-5s | ~1s | ~2-5s |
+| **File I/O** | Native SDK | Via exec (base64) | Native SDK | Via exec (base64) |
+| **Regions** | Multi | Multi | Global edge | Self-hosted |
+| **External deps** | `@daytonaio/sdk` | None (pure fetch) | `@cloudflare/sandbox` | BoxLite API |
 
 ## Multi-Agent Sessions
 
@@ -130,7 +137,7 @@ const session = await connect() // reads SANDBANK_* env vars
 session.on('message', async (msg) => {
   if (msg.type === 'task') {
     // do work...
-    await session.send(msg.from, { type: 'done', payload: result })
+    await session.send(msg.from, 'done', result)
   }
 })
 
@@ -176,8 +183,8 @@ await provider.destroy(sandbox.id)
 ## Development
 
 ```bash
-git clone https://github.com/anthropics/sandbank.dev.git
-cd sandbank.dev
+git clone https://github.com/chekusu/sandbank.git
+cd sandbank
 pnpm install
 
 # Run all unit tests

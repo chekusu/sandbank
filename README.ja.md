@@ -32,13 +32,16 @@ await provider.destroy(sandbox.id)
 │  アプリケーション / AI エージェント                      │
 ├──────────────────────────────────────────────────────┤
 │  @sandbank/core         統一プロバイダーインターフェース  │
+│  @sandbank/skills       スキルレジストリ・インジェクション │
 │  @sandbank/agent        サンドボックス内エージェント      │
 │  @sandbank/relay        マルチエージェント通信            │
 ├──────────────────────────────────────────────────────┤
-│  @sandbank/daytona   @sandbank/flyio   @sandbank/cloudflare │
+│  @sandbank/daytona  @sandbank/flyio  @sandbank/cloudflare  │
+│  @sandbank/boxlite                                   │
 │  プロバイダーアダプター                                  │
 ├──────────────────────────────────────────────────────┤
-│  Daytona            Fly.io Machines   Cloudflare Workers    │
+│  Daytona    Fly.io Machines    Cloudflare Workers     │
+│  BoxLite (セルフホスト Docker)                        │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -47,9 +50,11 @@ await provider.destroy(sandbox.id)
 | パッケージ | 説明 |
 |-----------|------|
 | [`@sandbank/core`](./packages/core) | プロバイダー抽象化、ケイパビリティシステム、エラー型 |
+| [`@sandbank/skills`](./packages/skills) | スキルレジストリ、ローカルファイルシステムローダー |
 | [`@sandbank/daytona`](./packages/daytona) | Daytona クラウドサンドボックスアダプター |
 | [`@sandbank/flyio`](./packages/flyio) | Fly.io Machines アダプター |
 | [`@sandbank/cloudflare`](./packages/cloudflare) | Cloudflare Workers アダプター |
+| [`@sandbank/boxlite`](./packages/boxlite) | BoxLite セルフホスト Docker アダプター |
 | [`@sandbank/relay`](./packages/relay) | マルチエージェント通信用 WebSocket リレー |
 | [`@sandbank/agent`](./packages/agent) | サンドボックス内エージェント軽量クライアント |
 
@@ -59,35 +64,37 @@ await provider.destroy(sandbox.id)
 
 すべてのプロバイダーが実装する最小契約：
 
-| 操作 | Daytona | Fly.io | Cloudflare |
-|------|:-------:|:------:|:----------:|
-| 作成 / 破棄 | ✅ | ✅ | ✅ |
-| サンドボックス一覧 | ✅ | ✅ | ✅ |
-| コマンド実行 | ✅ | ✅ | ✅ |
-| ファイル読み書き | ✅ | ✅ | ✅ |
+| 操作 | Daytona | Fly.io | Cloudflare | BoxLite |
+|------|:-------:|:------:|:----------:|:-------:|
+| 作成 / 破棄 | ✅ | ✅ | ✅ | ✅ |
+| サンドボックス一覧 | ✅ | ✅ | ✅ | ✅ |
+| コマンド実行 | ✅ | ✅ | ✅ | ✅ |
+| ファイル読み書き | ✅ | ✅ | ✅ | ✅ |
 
 ### 拡張ケイパビリティ
 
 ケイパビリティはオプトインです。`withVolumes(provider)` や `withPortExpose(sandbox)` 等で実行時に安全に検出・アクセスできます。
 
-| ケイパビリティ | Daytona | Fly.io | Cloudflare | 説明 |
-|--------------|:-------:|:------:|:----------:|------|
-| `volumes` | ✅ | ✅ | ✅ | 永続ボリューム管理 |
-| `port.expose` | ✅ | ✅ | ✅ | サンドボックスポートをインターネットに公開 |
-| `exec.stream` | ❌ | ❌ | ✅ | stdout/stderr のリアルタイムストリーミング |
-| `snapshot` | ❌ | ❌ | ✅ | サンドボックス状態のスナップショットと復元 |
-| `terminal` | ✅ | ✅ | ✅ | インタラクティブ Web ターミナル (ttyd) |
-| `sleep` | ❌ | ❌ | ❌ | サンドボックスの休止と復帰 |
+| ケイパビリティ | Daytona | Fly.io | Cloudflare | BoxLite | 説明 |
+|--------------|:-------:|:------:|:----------:|:-------:|------|
+| `volumes` | ✅ | ✅ | ⚠️* | ❌ | 永続ボリューム管理 |
+| `port.expose` | ✅ | ✅ | ✅ | ✅ | サンドボックスポートをインターネットに公開 |
+| `exec.stream` | ❌ | ❌ | ✅ | ✅ | stdout/stderr のリアルタイムストリーミング |
+| `snapshot` | ❌ | ❌ | ✅ | ✅ | サンドボックス状態のスナップショットと復元 |
+| `terminal` | ✅ | ✅ | ✅ | ✅ | インタラクティブ Web ターミナル (ttyd) |
+| `sleep` | ❌ | ❌ | ❌ | ✅ | サンドボックスの休止と復帰 |
+
+\* Cloudflare の `volumes` はアダプター設定で `storage` オプションが必要です。
 
 ### プロバイダー特性比較
 
-| | Daytona | Fly.io | Cloudflare |
-|---|---------|--------|------------|
-| **ランタイム** | フル VM | Firecracker マイクロ VM | V8 アイソレート + コンテナ |
-| **コールドスタート** | ~10 秒 | ~3-5 秒 | ~1 秒 |
-| **ファイル I/O** | ネイティブ SDK | exec 経由 (base64) | ネイティブ SDK |
-| **リージョン** | マルチ | マルチ | グローバルエッジ |
-| **外部依存** | `@daytonaio/sdk` | なし (純粋 fetch) | `@cloudflare/sandbox` |
+| | Daytona | Fly.io | Cloudflare | BoxLite |
+|---|---------|--------|------------|---------|
+| **ランタイム** | フル VM | Firecracker マイクロ VM | V8 アイソレート + コンテナ | Docker コンテナ |
+| **コールドスタート** | ~10 秒 | ~3-5 秒 | ~1 秒 | ~2-5 秒 |
+| **ファイル I/O** | ネイティブ SDK | exec 経由 (base64) | ネイティブ SDK | exec 経由 (base64) |
+| **リージョン** | マルチ | マルチ | グローバルエッジ | セルフホスト |
+| **外部依存** | `@daytonaio/sdk` | なし (純粋 fetch) | `@cloudflare/sandbox` | BoxLite API |
 
 ## マルチエージェントセッション
 
@@ -130,7 +137,7 @@ const session = await connect() // SANDBANK_* 環境変数を自動読み取り
 session.on('message', async (msg) => {
   if (msg.type === 'task') {
     // タスクを実行...
-    await session.send(msg.from, { type: 'done', payload: result })
+    await session.send(msg.from, 'done', result)
   }
 })
 
@@ -176,8 +183,8 @@ await provider.destroy(sandbox.id)
 ## 開発
 
 ```bash
-git clone https://github.com/anthropics/sandbank.dev.git
-cd sandbank.dev
+git clone https://github.com/chekusu/sandbank.git
+cd sandbank
 pnpm install
 
 # 全ユニットテストを実行

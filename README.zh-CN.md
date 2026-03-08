@@ -32,13 +32,16 @@ await provider.destroy(sandbox.id)
 │  你的应用 / AI Agent                                  │
 ├──────────────────────────────────────────────────────┤
 │  @sandbank/core         统一 Provider 接口            │
+│  @sandbank/skills       Skill 注册表与注入            │
 │  @sandbank/agent        沙箱内 Agent 客户端           │
 │  @sandbank/relay        多 Agent 通信中枢             │
 ├──────────────────────────────────────────────────────┤
-│  @sandbank/daytona   @sandbank/flyio   @sandbank/cloudflare │
+│  @sandbank/daytona  @sandbank/flyio  @sandbank/cloudflare  │
+│  @sandbank/boxlite                                   │
 │  Provider 适配器                                      │
 ├──────────────────────────────────────────────────────┤
-│  Daytona            Fly.io Machines   Cloudflare Workers    │
+│  Daytona    Fly.io Machines    Cloudflare Workers     │
+│  BoxLite (自托管 Docker)                              │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -47,9 +50,11 @@ await provider.destroy(sandbox.id)
 | 包名 | 说明 |
 |------|------|
 | [`@sandbank/core`](./packages/core) | Provider 抽象、能力系统、错误类型 |
+| [`@sandbank/skills`](./packages/skills) | Skill 注册表、本地文件系统加载器 |
 | [`@sandbank/daytona`](./packages/daytona) | Daytona 云沙箱适配器 |
 | [`@sandbank/flyio`](./packages/flyio) | Fly.io Machines 适配器 |
 | [`@sandbank/cloudflare`](./packages/cloudflare) | Cloudflare Workers 适配器 |
+| [`@sandbank/boxlite`](./packages/boxlite) | BoxLite 自托管 Docker 适配器 |
 | [`@sandbank/relay`](./packages/relay) | WebSocket 中继，用于多 Agent 通信 |
 | [`@sandbank/agent`](./packages/agent) | 沙箱内 Agent 轻量客户端 |
 
@@ -59,35 +64,37 @@ await provider.destroy(sandbox.id)
 
 所有 Provider 都必须实现的最小契约：
 
-| 操作 | Daytona | Fly.io | Cloudflare |
-|------|:-------:|:------:|:----------:|
-| 创建 / 销毁 | ✅ | ✅ | ✅ |
-| 列出沙箱 | ✅ | ✅ | ✅ |
-| 执行命令 | ✅ | ✅ | ✅ |
-| 读写文件 | ✅ | ✅ | ✅ |
+| 操作 | Daytona | Fly.io | Cloudflare | BoxLite |
+|------|:-------:|:------:|:----------:|:-------:|
+| 创建 / 销毁 | ✅ | ✅ | ✅ | ✅ |
+| 列出沙箱 | ✅ | ✅ | ✅ | ✅ |
+| 执行命令 | ✅ | ✅ | ✅ | ✅ |
+| 读写文件 | ✅ | ✅ | ✅ | ✅ |
 
 ### 扩展能力
 
 能力是可选的。通过 `withVolumes(provider)`、`withPortExpose(sandbox)` 等函数在运行时安全检测并访问。
 
-| 能力 | Daytona | Fly.io | Cloudflare | 说明 |
-|------|:-------:|:------:|:----------:|------|
-| `volumes` | ✅ | ✅ | ✅ | 持久卷管理 |
-| `port.expose` | ✅ | ✅ | ✅ | 将沙箱端口暴露到公网 |
-| `exec.stream` | ❌ | ❌ | ✅ | 实时流式输出 stdout/stderr |
-| `snapshot` | ❌ | ❌ | ✅ | 沙箱状态快照与恢复 |
-| `terminal` | ✅ | ✅ | ✅ | 交互式 Web 终端 (ttyd) |
-| `sleep` | ❌ | ❌ | ❌ | 休眠与唤醒 |
+| 能力 | Daytona | Fly.io | Cloudflare | BoxLite | 说明 |
+|------|:-------:|:------:|:----------:|:-------:|------|
+| `volumes` | ✅ | ✅ | ⚠️* | ❌ | 持久卷管理 |
+| `port.expose` | ✅ | ✅ | ✅ | ✅ | 将沙箱端口暴露到公网 |
+| `exec.stream` | ❌ | ❌ | ✅ | ✅ | 实时流式输出 stdout/stderr |
+| `snapshot` | ❌ | ❌ | ✅ | ✅ | 沙箱状态快照与恢复 |
+| `terminal` | ✅ | ✅ | ✅ | ✅ | 交互式 Web 终端 (ttyd) |
+| `sleep` | ❌ | ❌ | ❌ | ✅ | 休眠与唤醒 |
+
+\* Cloudflare 的 `volumes` 需要在适配器配置中启用 `storage` 选项。
 
 ### Provider 特性对比
 
-| | Daytona | Fly.io | Cloudflare |
-|---|---------|--------|------------|
-| **运行时** | 完整 VM | Firecracker 微虚拟机 | V8 隔离 + 容器 |
-| **冷启动** | ~10s | ~3-5s | ~1s |
-| **文件 I/O** | 原生 SDK | 通过 exec (base64) | 原生 SDK |
-| **区域** | 多区域 | 多区域 | 全球边缘 |
-| **外部依赖** | `@daytonaio/sdk` | 无 (纯 fetch) | `@cloudflare/sandbox` |
+| | Daytona | Fly.io | Cloudflare | BoxLite |
+|---|---------|--------|------------|---------|
+| **运行时** | 完整 VM | Firecracker 微虚拟机 | V8 隔离 + 容器 | Docker 容器 |
+| **冷启动** | ~10s | ~3-5s | ~1s | ~2-5s |
+| **文件 I/O** | 原生 SDK | 通过 exec (base64) | 原生 SDK | 通过 exec (base64) |
+| **区域** | 多区域 | 多区域 | 全球边缘 | 自托管 |
+| **外部依赖** | `@daytonaio/sdk` | 无 (纯 fetch) | `@cloudflare/sandbox` | BoxLite API |
 
 ## 多 Agent 会话
 
@@ -130,7 +137,7 @@ const session = await connect() // 自动读取 SANDBANK_* 环境变量
 session.on('message', async (msg) => {
   if (msg.type === 'task') {
     // 执行任务...
-    await session.send(msg.from, { type: 'done', payload: result })
+    await session.send(msg.from, 'done', result)
   }
 })
 
@@ -176,8 +183,8 @@ await provider.destroy(sandbox.id)
 ## 开发
 
 ```bash
-git clone https://github.com/anthropics/sandbank.dev.git
-cd sandbank.dev
+git clone https://github.com/chekusu/sandbank.git
+cd sandbank
 pnpm install
 
 # 运行全部单元测试
