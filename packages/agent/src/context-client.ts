@@ -26,27 +26,31 @@ export function createWsContextClient(transport: Transport, pending: RpcPendingM
   return {
     async get<T = unknown>(key: string): Promise<T | undefined> {
       const req = createRequest('context.get', { key })
+      const promise = pending.add(req.id)
       transport.send(JSON.stringify(req))
-      const result = await pending.add(req.id) as { value: T | null }
+      const result = await promise as { value: T | null }
       return result.value ?? undefined
     },
 
     async set<T = unknown>(key: string, value: T): Promise<void> {
       const req = createRequest('context.set', { key, value })
+      const promise = pending.add(req.id)
       transport.send(JSON.stringify(req))
-      await pending.add(req.id)
+      await promise
     },
 
     async delete(key: string): Promise<void> {
       const req = createRequest('context.delete', { key })
+      const promise = pending.add(req.id)
       transport.send(JSON.stringify(req))
-      await pending.add(req.id)
+      await promise
     },
 
     async keys(): Promise<string[]> {
       const req = createRequest('context.keys')
+      const promise = pending.add(req.id)
       transport.send(JSON.stringify(req))
-      const result = await pending.add(req.id) as { keys: string[] }
+      const result = await promise as { keys: string[] }
       return result.keys
     },
 

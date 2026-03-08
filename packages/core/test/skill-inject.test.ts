@@ -36,7 +36,7 @@ describe('injectSkills', () => {
 
     await injectSkills(sandbox, skills)
 
-    expect(sandbox.exec).toHaveBeenCalledWith('mkdir -p /root/.claude/skills')
+    expect(sandbox.exec).toHaveBeenCalledWith("mkdir -p '/root/.claude/skills'")
   })
 
   it('uses default directory /root/.claude/skills', async () => {
@@ -54,7 +54,7 @@ describe('injectSkills', () => {
 
     await injectSkills(sandbox, skills, '/home/user/.claude/skills')
 
-    expect(sandbox.exec).toHaveBeenCalledWith('mkdir -p /home/user/.claude/skills')
+    expect(sandbox.exec).toHaveBeenCalledWith("mkdir -p '/home/user/.claude/skills'")
     expect(sandbox.writeFile).toHaveBeenCalledWith('/home/user/.claude/skills/test.md', 'content')
   })
 

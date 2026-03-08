@@ -119,12 +119,16 @@ export class SessionStore {
     const now = Date.now()
     let evicted = 0
 
+    const toEvict: string[] = []
     for (const [id, session] of this.sessions) {
       const idle = now - session.lastActivityAt
       if (idle > this.sessionTtlMs && session.clients.size === 0) {
-        this.deleteSession(id)
-        evicted++
+        toEvict.push(id)
       }
+    }
+    for (const id of toEvict) {
+      this.deleteSession(id)
+      evicted++
     }
 
     return evicted

@@ -39,7 +39,7 @@ export async function createSession(config: CreateSessionConfig): Promise<Sessio
     closeRelay = () => relay.close()
   } else {
     relayUrl = relayConfig.url
-    wsUrl = relayConfig.url.replace(/^http/, 'ws')
+    wsUrl = relayConfig.url.replace(/^https?/, (p) => p === 'https' ? 'wss' : 'ws')
     closeRelay = async () => {}
   }
 
@@ -305,14 +305,14 @@ export async function createSession(config: CreateSessionConfig): Promise<Sessio
       }
       completionWaiters.clear()
 
-      // 断开 WebSocket
-      ws.close()
-
-      // 并行销毁所有沙箱
+      // 并行销毁所有沙箱（在断开 WebSocket 前，确保 relay 仍可达）
       await Promise.allSettled(
         [...sandboxes.values()].map(sandbox => config.provider.destroy(sandbox.id))
       )
       sandboxes.clear()
+
+      // 断开 WebSocket
+      ws.close()
 
       // 关闭 relay
       await closeRelay()
