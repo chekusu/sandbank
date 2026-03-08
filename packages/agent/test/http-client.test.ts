@@ -111,7 +111,7 @@ describe('HTTP client functions', () => {
     await contextSet('temp', 'val')
     await contextDelete('temp')
     const val = await contextGet('temp')
-    expect(val).toBeNull()
+    expect(val).toBeUndefined()
   })
 
   it('complete sends sandbox.complete', async () => {

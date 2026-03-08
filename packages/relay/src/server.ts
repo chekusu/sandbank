@@ -118,6 +118,13 @@ function handleHttp(store: SessionStore, req: IncomingMessage, res: ServerRespon
     }
     store.touch(session)
 
+    // Validate sandboxName against registered sandboxes (skip for session.register itself)
+    if (sandboxName && request.method !== 'session.register' && !session.sandboxes.has(sandboxName)) {
+      res.writeHead(403, responseHeaders)
+      res.end(JSON.stringify({ jsonrpc: '2.0', id: request.id, error: { code: -32600, message: `Sandbox not registered: ${sandboxName}` } }))
+      return
+    }
+
     const client = {
       sessionId,
       sandboxName: sandboxName ?? null,

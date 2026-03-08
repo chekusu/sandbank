@@ -130,19 +130,21 @@ export async function downloadArchiveViaExec(
   // 打包
   const tarResult = await sandbox.exec(`tar czf ${tmp} -C ${shellEscape(source)} .`)
   if (tarResult.exitCode !== 0) {
-    await sandbox.exec(`rm -f ${tmp}`)
+    await sandbox.exec(`rm -f ${tmp}`).catch(() => {})
     throw new Error(`downloadArchive: tar failed: ${tarResult.stderr}`)
   }
 
-  // 读取 base64
-  const readResult = await sandbox.exec(`base64 ${tmp}`)
-  if (readResult.exitCode !== 0) {
-    await sandbox.exec(`rm -f ${tmp}`)
-    throw new Error(`downloadArchive: read failed: ${readResult.stderr}`)
+  let readResult: { exitCode: number; stdout: string; stderr: string }
+  try {
+    // 读取 base64
+    readResult = await sandbox.exec(`base64 ${tmp}`)
+    if (readResult.exitCode !== 0) {
+      throw new Error(`downloadArchive: read failed: ${readResult.stderr}`)
+    }
+  } finally {
+    // 清理临时文件（无论成功或失败）
+    await sandbox.exec(`rm -f ${tmp}`).catch(() => {})
   }
-
-  // 清理
-  await sandbox.exec(`rm -f ${tmp}`)
 
   // 解码为 Uint8Array
   const clean = readResult.stdout.replace(/\s/g, '')

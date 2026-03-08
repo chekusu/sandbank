@@ -81,7 +81,7 @@ function wrapCloudflareSandbox(
   state: SandboxState,
   createdAt: string,
   hostname: string,
-  snapshots: Map<string, DirectoryBackup>,
+  sandboxSnapshots: Map<string, DirectoryBackup>,
 ): AdapterSandbox {
   return {
     id,
@@ -138,12 +138,12 @@ function wrapCloudflareSandbox(
     async createSnapshot(name?: string): Promise<{ snapshotId: string }> {
       const backup = await sandbox.createBackup({ dir: '/', name: name ?? undefined })
       const snapshotId = name ?? `snap-${crypto.randomUUID().slice(0, 8)}`
-      snapshots.set(snapshotId, backup)
+      sandboxSnapshots.set(snapshotId, backup)
       return { snapshotId }
     },
 
     async restoreSnapshot(snapshotId: string): Promise<void> {
-      const backup = snapshots.get(snapshotId)
+      const backup = sandboxSnapshots.get(snapshotId)
       if (!backup) {
         throw new SandboxNotFoundError('cloudflare', snapshotId)
       }
@@ -195,7 +195,7 @@ export class CloudflareAdapter implements SandboxAdapter {
   private readonly config: CloudflareAdapterConfig
   private readonly sandboxes = new Map<string, SandboxRecord>()
   private readonly volumes = new Map<string, VolumeRecord>()
-  private readonly snapshots = new Map<string, DirectoryBackup>()
+  private readonly snapshots = new Map<string, Map<string, DirectoryBackup>>()
 
   constructor(config: CloudflareAdapterConfig) {
     this.config = config
@@ -205,6 +205,15 @@ export class CloudflareAdapter implements SandboxAdapter {
       caps.push('volumes')
     }
     this.capabilities = new Set(caps)
+  }
+
+  private getSnapshotsFor(sandboxId: string): Map<string, DirectoryBackup> {
+    let map = this.snapshots.get(sandboxId)
+    if (!map) {
+      map = new Map()
+      this.snapshots.set(sandboxId, map)
+    }
+    return map
   }
 
   async createSandbox(config: CreateConfig): Promise<AdapterSandbox> {
@@ -246,7 +255,7 @@ export class CloudflareAdapter implements SandboxAdapter {
       }
       this.sandboxes.set(id, record)
 
-      return wrapCloudflareSandbox(id, sandbox, 'running', createdAt, this.config.hostname, this.snapshots)
+      return wrapCloudflareSandbox(id, sandbox, 'running', createdAt, this.config.hostname, this.getSnapshotsFor(id))
     } catch (err) {
       throw new ProviderError('cloudflare', err)
     }
@@ -264,7 +273,7 @@ export class CloudflareAdapter implements SandboxAdapter {
     })
     record.sandboxRef = sandbox
 
-    return wrapCloudflareSandbox(id, sandbox, record.state, record.createdAt, this.config.hostname, this.snapshots)
+    return wrapCloudflareSandbox(id, sandbox, record.state, record.createdAt, this.config.hostname, this.getSnapshotsFor(id))
   }
 
   async listSandboxes(filter?: ListFilter): Promise<SandboxInfo[]> {

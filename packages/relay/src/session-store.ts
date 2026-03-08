@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { randomUUID, timingSafeEqual } from 'node:crypto'
 import { ContextStoreServer } from './context-store.js'
 import type { RelaySession, SandboxEntry, QueuedMessage, ConnectedClient, SessionStoreOptions } from './types.js'
 
@@ -84,7 +84,9 @@ export class SessionStore {
   validateToken(sessionId: string, token: string): boolean {
     const session = this.getSession(sessionId)
     if (!session) return false
-    return session.token === token
+    const a = Buffer.from(session.token)
+    const b = Buffer.from(token)
+    return a.length === b.length && timingSafeEqual(a, b)
   }
 
   getContext(sessionId: string): ContextStoreServer | undefined {
@@ -138,6 +140,8 @@ export class SessionStore {
   registerSandbox(sessionId: string, name: string, sandboxId: string): void {
     const session = this.getSession(sessionId)
     if (!session) throw new Error(`Session not found: ${sessionId}`)
+    if (name === 'orchestrator') throw new Error('Reserved name: orchestrator')
+    if (session.sandboxes.has(name)) throw new Error(`Sandbox already registered: ${name}`)
 
     this.touch(session)
     session.sandboxes.set(name, { name, sandboxId, state: 'running' })

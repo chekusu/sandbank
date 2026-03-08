@@ -63,7 +63,7 @@ export async function recvMessages(
 
 export async function contextGet(key: string): Promise<unknown> {
   const result = await rpcCall('context.get', { key }) as { value: unknown }
-  return result.value
+  return result.value ?? undefined
 }
 
 export async function contextSet(key: string, value: unknown): Promise<void> {

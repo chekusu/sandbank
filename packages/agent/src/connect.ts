@@ -48,8 +48,17 @@ export async function connect(options: ConnectOptions = {}): Promise<AgentSessio
   })
   const authPromise = pending.add(authReq.id)
   transport.send(JSON.stringify(authReq))
-  const authResult = await authPromise as { ok: boolean }
-  if (!authResult.ok) throw new Error('Authentication failed')
+  let authResult: { ok: boolean }
+  try {
+    authResult = await authPromise as { ok: boolean }
+  } catch (err) {
+    transport.close()
+    throw err
+  }
+  if (!authResult.ok) {
+    transport.close()
+    throw new Error('Authentication failed')
+  }
 
   const context = createWsContextClient(transport, pending)
 

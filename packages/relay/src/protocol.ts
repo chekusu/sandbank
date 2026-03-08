@@ -81,6 +81,11 @@ export function handleAuth(
     session = store.getOrCreateSession(sessionId, token)
   }
 
+  // Validate sandboxName: agents must claim a registered sandbox name
+  if (sandboxName && !session!.sandboxes.has(sandboxName)) {
+    return rpcError(id, -32600, `Sandbox not registered: ${sandboxName}`)
+  }
+
   wsClient.sessionId = sessionId
   wsClient.sandboxName = sandboxName ?? null
   wsClient.role = role === 'orchestrator' ? 'orchestrator' : 'agent'
