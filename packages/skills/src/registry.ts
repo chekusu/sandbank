@@ -4,7 +4,7 @@ import type { SkillSource, SkillRegistry } from './types.js'
 export function createSkillRegistry(): SkillRegistry {
   const sources: SkillSource[] = []
 
-  return {
+  const registry: SkillRegistry = {
     addSource(source: SkillSource): void {
       sources.push(source)
     },
@@ -20,7 +20,7 @@ export function createSkillRegistry(): SkillRegistry {
     async loadMany(names: string[]): Promise<SkillDefinition[]> {
       const results: SkillDefinition[] = []
       for (const name of names) {
-        const skill = await this.load(name)
+        const skill = await registry.load(name)
         if (skill) results.push(skill)
       }
       return results
@@ -35,4 +35,6 @@ export function createSkillRegistry(): SkillRegistry {
       return [...all]
     },
   }
+
+  return registry
 }
