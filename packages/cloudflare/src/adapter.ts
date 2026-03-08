@@ -27,6 +27,8 @@ export interface CloudflareAdapterConfig {
   hostname: string
   /** Auto-sleep duration, e.g. '30m' (optional) */
   sleepAfter?: string
+  /** Keep the container alive indefinitely (prevents auto-sleep). Must be explicitly destroyed. */
+  keepAlive?: boolean
   /** R2/S3 storage config (enables 'volumes' capability) */
   storage?: {
     endpoint: string
@@ -228,7 +230,9 @@ export class CloudflareAdapter implements SandboxAdapter {
 
     try {
       const opts: Record<string, unknown> = {}
-      if (this.config.sleepAfter) {
+      if (this.config.keepAlive) {
+        opts['keepAlive'] = true
+      } else if (this.config.sleepAfter) {
         opts['sleepAfter'] = this.config.sleepAfter
       }
 
@@ -273,9 +277,13 @@ export class CloudflareAdapter implements SandboxAdapter {
     }
 
     // Reconnect lazily via getSandbox
-    const sandbox = getSandbox(this.config.namespace, record.externalId, {
-      sleepAfter: this.config.sleepAfter,
-    })
+    const reconnectOpts: Record<string, unknown> = {}
+    if (this.config.keepAlive) {
+      reconnectOpts['keepAlive'] = true
+    } else if (this.config.sleepAfter) {
+      reconnectOpts['sleepAfter'] = this.config.sleepAfter
+    }
+    const sandbox = getSandbox(this.config.namespace, record.externalId, reconnectOpts)
     record.sandboxRef = sandbox
 
     return wrapCloudflareSandbox(id, sandbox, record.state, record.createdAt, this.config.hostname, this.getSnapshotsFor(id))
