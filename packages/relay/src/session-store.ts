@@ -188,8 +188,10 @@ export class SessionStore {
         this.enqueueMessage(session, name, msg)
       }
     }
-    // 也推送给编排者
-    this.pushToOrchestrator(session, msg)
+    // 也推送给编排者（除非发送者就是编排者）
+    if (excludeSender !== '') {
+      this.pushToOrchestrator(session, msg)
+    }
   }
 
   /** 消耗队列：steer 优先排序 */

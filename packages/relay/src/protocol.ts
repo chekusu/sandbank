@@ -31,7 +31,7 @@ export function handleRpc(
       return handleContextSet(store, id, client.sessionId, client.sandboxName ?? 'orchestrator', p)
 
     case 'context.delete':
-      return handleContextDelete(store, id, client.sessionId, p)
+      return handleContextDelete(store, id, client.sessionId, client.sandboxName ?? 'orchestrator', p)
 
     case 'context.keys':
       return handleContextKeys(store, id, client.sessionId)
@@ -240,15 +240,18 @@ function handleContextDelete(
   store: SessionStore,
   id: number | string,
   sessionId: string,
+  changedBy: string,
   params: Record<string, unknown>,
 ): JsonRpcResponse {
+  const session = store.getSession(sessionId)
   const ctx = store.getContext(sessionId)
-  if (!ctx) return rpcError(id, -32000, 'Session not found')
+  if (!ctx || !session) return rpcError(id, -32000, 'Session not found')
 
   const key = params['key'] as string
   if (!key) return rpcError(id, -32602, 'Missing key')
 
   ctx.delete(key)
+  ctx.notifyClients(session.clients, key, undefined, changedBy)
   return rpcResult(id, { ok: true })
 }
 
