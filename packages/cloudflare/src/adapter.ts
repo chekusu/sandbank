@@ -131,6 +131,11 @@ function wrapCloudflareSandbox(
     },
 
     async exposePort(port: number): Promise<{ url: string }> {
+      if (port === 3000) {
+        throw new Error(
+          'Port 3000 is reserved by the Cloudflare sandbox control plane. Use a different port (1024-65535, excluding 3000).',
+        )
+      }
       const result = await sandbox.exposePort(port, { hostname })
       return { url: result.url }
     },
