@@ -133,7 +133,12 @@ export function createProvider(adapter: SandboxAdapter): SandboxProvider {
       const sandbox = wrapSandbox(raw, adapter.name)
 
       if (config.skills?.length) {
-        await injectSkills(sandbox, config.skills)
+        try {
+          await injectSkills(sandbox, config.skills)
+        } catch (err) {
+          await adapter.destroySandbox(raw.id).catch(() => {})
+          throw err
+        }
       }
 
       return sandbox
