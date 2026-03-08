@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { SandboxNotFoundError, ProviderError } from '@sandbank/core'
+import { SandboxNotFoundError, ProviderError } from '@sandbank.dev/core'
 
 // --- Mock client module ---
 

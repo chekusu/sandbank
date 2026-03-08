@@ -1,4 +1,4 @@
-import type { ContextStore, Transport, JsonRpcResponse, JsonRpcNotification } from '@sandbank/core'
+import type { ContextStore, Transport, JsonRpcResponse, JsonRpcNotification } from '@sandbank.dev/core'
 import { createRequest, RpcPendingMap } from './rpc.js'
 
 /** WebSocket 模式下的 ContextStore 代理 */

@@ -1,5 +1,5 @@
 {
-  "name": "@sandbank/core",
+  "name": "@sandbank.dev/core",
   "version": "0.1.0",
   "description": "Unified sandbox SDK for AI agents — provider abstraction, capability system, and error types",
   "license": "MIT",
@@ -24,15 +24,15 @@
     "clean": "rm -rf dist"
   },
   "peerDependencies": {
-    "@sandbank/relay": "workspace:*"
+    "@sandbank.dev/relay": "workspace:*"
   },
   "peerDependenciesMeta": {
-    "@sandbank/relay": {
+    "@sandbank.dev/relay": {
       "optional": true
     }
   },
   "devDependencies": {
-    "@sandbank/relay": "workspace:*",
+    "@sandbank.dev/relay": "workspace:*",
     "@types/node": "^22.15.0",
     "typescript": "^5.7.3",
     "ws": "^8.18.0",

@@ -1,4 +1,4 @@
-import type { MessagePriority, ContextStore } from '@sandbank/core'
+import type { MessagePriority, ContextStore } from '@sandbank.dev/core'
 
 export interface AgentMessage {
   from: string

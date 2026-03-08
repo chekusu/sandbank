@@ -1,4 +1,4 @@
-import type { Transport } from '@sandbank/core'
+import type { Transport } from '@sandbank.dev/core'
 
 /** 使用 Node 内置 WebSocket 的 Transport 实现 */
 export function createWebSocketTransport(url: string): Promise<Transport> {

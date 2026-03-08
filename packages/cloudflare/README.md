@@ -1,18 +1,18 @@
-# @sandbank/cloudflare
+# @sandbank.dev/cloudflare
 
 > Cloudflare Workers sandbox adapter for [Sandbank](../../README.md).
 
 ## Install
 
 ```bash
-pnpm add @sandbank/core @sandbank/cloudflare
+pnpm add @sandbank.dev/core @sandbank.dev/cloudflare
 ```
 
 ## Usage
 
 ```typescript
-import { createProvider } from '@sandbank/core'
-import { CloudflareAdapter } from '@sandbank/cloudflare'
+import { createProvider } from '@sandbank.dev/core'
+import { CloudflareAdapter } from '@sandbank.dev/cloudflare'
 
 const adapter = new CloudflareAdapter({
   namespace: env.SANDBOX,       // DurableObject binding

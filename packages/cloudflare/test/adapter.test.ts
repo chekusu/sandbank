@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { AdapterSandbox, VolumeInfo } from '@sandbank/core'
-import { SandboxNotFoundError, ProviderError } from '@sandbank/core'
+import type { AdapterSandbox, VolumeInfo } from '@sandbank.dev/core'
+import { SandboxNotFoundError, ProviderError } from '@sandbank.dev/core'
 
 // --- Mock @cloudflare/sandbox ---
 

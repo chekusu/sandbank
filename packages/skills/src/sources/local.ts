@@ -1,6 +1,6 @@
 import { readFile, readdir } from 'node:fs/promises'
 import { join, basename } from 'node:path'
-import type { SkillDefinition } from '@sandbank/core'
+import type { SkillDefinition } from '@sandbank.dev/core'
 import type { SkillSource } from '../types.js'
 
 export function createLocalSource(dir: string): SkillSource {

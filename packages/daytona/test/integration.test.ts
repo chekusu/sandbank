@@ -8,7 +8,7 @@ import {
   SandboxNotFoundError,
   ProviderError,
 
-} from '@sandbank/core'
+} from '@sandbank.dev/core'
 import { DaytonaAdapter } from '../src/index.js'
 
 const API_KEY = process.env['DAYTONA_API_KEY'] ?? ''

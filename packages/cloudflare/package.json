@@ -1,5 +1,5 @@
 {
-  "name": "@sandbank/cloudflare",
+  "name": "@sandbank.dev/cloudflare",
   "version": "0.1.0",
   "description": "Cloudflare Workers sandbox adapter for Sandbank",
   "license": "MIT",
@@ -28,7 +28,7 @@
   },
   "dependencies": {
     "@cloudflare/sandbox": "^0.7.0",
-    "@sandbank/core": "workspace:*"
+    "@sandbank.dev/core": "workspace:*"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250214.0",

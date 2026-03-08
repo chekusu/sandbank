@@ -4,10 +4,10 @@ import { resolve } from 'path'
 export default defineConfig({
   resolve: {
     alias: {
-      '@sandbank/core': resolve(__dirname, 'packages/core/src/index.ts'),
-      '@sandbank/relay': resolve(__dirname, 'packages/relay/src/index.ts'),
-      '@sandbank/agent': resolve(__dirname, 'packages/agent/src/index.ts'),
-      '@sandbank/boxlite': resolve(__dirname, 'packages/boxlite/src/index.ts'),
+      '@sandbank.dev/core': resolve(__dirname, 'packages/core/src/index.ts'),
+      '@sandbank.dev/relay': resolve(__dirname, 'packages/relay/src/index.ts'),
+      '@sandbank.dev/agent': resolve(__dirname, 'packages/agent/src/index.ts'),
+      '@sandbank.dev/boxlite': resolve(__dirname, 'packages/boxlite/src/index.ts'),
     },
   },
   test: {

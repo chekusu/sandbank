@@ -15,7 +15,7 @@ import type {
   ListFilter,
   SandboxInfo,
   SandboxState,
-} from '@sandbank/core'
+} from '@sandbank.dev/core'
 
 export interface CloudflareHttpAdapterConfig {
   workerUrl: string

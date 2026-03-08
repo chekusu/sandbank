@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import type { JsonRpcRequest } from '@sandbank/core'
+import type { JsonRpcRequest } from '@sandbank.dev/core'
 import { handleRpc, handleAuth } from '../src/protocol.js'
 import { SessionStore } from '../src/session-store.js'
 import type { ConnectedClient } from '../src/types.js'

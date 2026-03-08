@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { startRelay, type RelayServer } from '../src/index.js'
-import type { JsonRpcRequest, JsonRpcResponse } from '@sandbank/core'
+import type { JsonRpcRequest, JsonRpcResponse } from '@sandbank.dev/core'
 
 let relay: RelayServer | undefined
 

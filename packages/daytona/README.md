@@ -1,18 +1,18 @@
-# @sandbank/daytona
+# @sandbank.dev/daytona
 
 > Daytona cloud sandbox adapter for [Sandbank](../../README.md).
 
 ## Install
 
 ```bash
-pnpm add @sandbank/core @sandbank/daytona
+pnpm add @sandbank.dev/core @sandbank.dev/daytona
 ```
 
 ## Usage
 
 ```typescript
-import { createProvider } from '@sandbank/core'
-import { DaytonaAdapter } from '@sandbank/daytona'
+import { createProvider } from '@sandbank.dev/core'
+import { DaytonaAdapter } from '@sandbank.dev/daytona'
 
 const provider = createProvider(
   new DaytonaAdapter({

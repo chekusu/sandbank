@@ -12,8 +12,8 @@ import type {
   TerminalOptions,
   VolumeConfig,
   VolumeInfo,
-} from '@sandbank/core'
-import { SandboxNotFoundError, ProviderError } from '@sandbank/core'
+} from '@sandbank.dev/core'
+import { SandboxNotFoundError, ProviderError } from '@sandbank.dev/core'
 import type { Daytona as DaytonaClient, Sandbox as DaytonaSandbox } from '@daytonaio/sdk'
 
 export interface DaytonaAdapterConfig {

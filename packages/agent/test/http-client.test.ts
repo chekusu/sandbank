@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest'
-import { startRelay } from '@sandbank/relay'
-import type { RelayServer } from '@sandbank/relay'
+import { startRelay } from '@sandbank.dev/relay'
+import type { RelayServer } from '@sandbank.dev/relay'
 import WebSocket from 'ws'
 import {
   sendMessage,

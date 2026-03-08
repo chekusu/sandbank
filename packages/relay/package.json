@@ -1,5 +1,5 @@
 {
-  "name": "@sandbank/relay",
+  "name": "@sandbank.dev/relay",
   "version": "0.1.0",
   "description": "WebSocket relay server for multi-agent communication in Sandbank",
   "license": "MIT",
@@ -27,11 +27,11 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
-    "@sandbank/core": "workspace:*",
+    "@sandbank.dev/core": "workspace:*",
     "@types/ws": "^8.18.0",
     "typescript": "^5.7.3"
   },
   "peerDependencies": {
-    "@sandbank/core": "workspace:*"
+    "@sandbank.dev/core": "workspace:*"
   }
 }

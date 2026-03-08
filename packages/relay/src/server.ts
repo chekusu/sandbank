@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { WebSocketServer, type WebSocket } from 'ws'
-import type { JsonRpcRequest } from '@sandbank/core'
+import type { JsonRpcRequest } from '@sandbank.dev/core'
 import type { ConnectedClient, SessionStoreOptions } from './types.js'
 import { SessionStore } from './session-store.js'
 import { handleRpc, handleAuth } from './protocol.js'

@@ -1,4 +1,4 @@
-import type { SkillDefinition } from '@sandbank/core'
+import type { SkillDefinition } from '@sandbank.dev/core'
 
 export interface SkillSource {
   readonly name: string

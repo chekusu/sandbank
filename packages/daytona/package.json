@@ -1,5 +1,5 @@
 {
-  "name": "@sandbank/daytona",
+  "name": "@sandbank.dev/daytona",
   "version": "0.1.0",
   "description": "Daytona cloud sandbox adapter for Sandbank",
   "license": "MIT",
@@ -27,7 +27,7 @@
   },
   "dependencies": {
     "@daytonaio/sdk": "^0.144.0",
-    "@sandbank/core": "workspace:*"
+    "@sandbank.dev/core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^25.3.0",

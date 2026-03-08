@@ -20,10 +20,10 @@ importers:
 
   packages/agent:
     devDependencies:
-      '@sandbank/core':
+      '@sandbank.dev/core':
         specifier: workspace:*
         version: link:../core
-      '@sandbank/relay':
+      '@sandbank.dev/relay':
         specifier: workspace:*
         version: link:../relay
       '@types/node':
@@ -41,7 +41,7 @@ importers:
 
   packages/boxlite:
     dependencies:
-      '@sandbank/core':
+      '@sandbank.dev/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
@@ -54,7 +54,7 @@ importers:
       '@cloudflare/sandbox':
         specifier: ^0.7.0
         version: 0.7.6
-      '@sandbank/core':
+      '@sandbank.dev/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
@@ -70,7 +70,7 @@ importers:
 
   packages/core:
     devDependencies:
-      '@sandbank/relay':
+      '@sandbank.dev/relay':
         specifier: workspace:*
         version: link:../relay
       '@types/node':
@@ -91,7 +91,7 @@ importers:
       '@daytonaio/sdk':
         specifier: ^0.144.0
         version: 0.144.0(ws@8.19.0)
-      '@sandbank/core':
+      '@sandbank.dev/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
@@ -104,7 +104,7 @@ importers:
 
   packages/flyio:
     dependencies:
-      '@sandbank/core':
+      '@sandbank.dev/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
@@ -118,7 +118,7 @@ importers:
         specifier: ^8.18.0
         version: 8.19.0
     devDependencies:
-      '@sandbank/core':
+      '@sandbank.dev/core':
         specifier: workspace:*
         version: link:../core
       '@types/ws':
@@ -130,7 +130,7 @@ importers:
 
   packages/sandbank:
     dependencies:
-      '@sandbank/core':
+      '@sandbank.dev/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
@@ -140,7 +140,7 @@ importers:
 
   packages/skills:
     dependencies:
-      '@sandbank/core':
+      '@sandbank.dev/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:

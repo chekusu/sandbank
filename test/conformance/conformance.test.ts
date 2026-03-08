@@ -15,8 +15,8 @@
  * - 2+ set       → full suite including hot-swap
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { createProvider } from '@sandbank/core'
-import type { SandboxProvider, Sandbox } from '@sandbank/core'
+import { createProvider } from '@sandbank.dev/core'
+import type { SandboxProvider, Sandbox } from '@sandbank.dev/core'
 import { CloudflareHttpAdapter } from './cloudflare-http-adapter.js'
 
 interface ProviderEntry {
@@ -32,7 +32,7 @@ const providers: ProviderEntry[] = []
 
 if (process.env.DAYTONA_API_KEY) {
   // Dynamic import to avoid hard dependency when Daytona isn't available
-  const { DaytonaAdapter } = await import('@sandbank/daytona')
+  const { DaytonaAdapter } = await import('@sandbank.dev/daytona')
   const adapter = new DaytonaAdapter({
     apiKey: process.env.DAYTONA_API_KEY,
     apiUrl: process.env.DAYTONA_API_URL,
@@ -48,7 +48,7 @@ if (process.env.E2E_WORKER_URL) {
 }
 
 if (process.env.FLY_API_TOKEN && process.env.FLY_APP_NAME) {
-  const { FlyioAdapter } = await import('@sandbank/flyio')
+  const { FlyioAdapter } = await import('@sandbank.dev/flyio')
   const adapter = new FlyioAdapter({
     apiToken: process.env.FLY_API_TOKEN,
     appName: process.env.FLY_APP_NAME,
@@ -58,7 +58,7 @@ if (process.env.FLY_API_TOKEN && process.env.FLY_APP_NAME) {
 }
 
 if (process.env.BOXLITE_API_URL && (process.env.BOXLITE_API_TOKEN || (process.env.BOXLITE_CLIENT_ID && process.env.BOXLITE_CLIENT_SECRET))) {
-  const { BoxLiteAdapter } = await import('@sandbank/boxlite')
+  const { BoxLiteAdapter } = await import('@sandbank.dev/boxlite')
   const adapter = new BoxLiteAdapter({
     apiUrl: process.env.BOXLITE_API_URL,
     prefix: process.env.BOXLITE_PREFIX,
@@ -244,7 +244,7 @@ for (const entry of providers) {
     it('stream output contains expected content', async () => {
       if (!entry.provider.capabilities.has('exec.stream')) return
 
-      const streamable = sandbox as import('@sandbank/core').StreamableSandbox
+      const streamable = sandbox as import('@sandbank.dev/core').StreamableSandbox
       const stream = await streamable.execStream('echo stream-test')
       const reader = stream.getReader()
       let collected = ''
@@ -261,7 +261,7 @@ for (const entry of providers) {
     it('startTerminal returns { url, port }', async () => {
       if (!entry.provider.capabilities.has('terminal')) return
 
-      const terminal = sandbox as import('@sandbank/core').TerminalSandbox
+      const terminal = sandbox as import('@sandbank.dev/core').TerminalSandbox
       const info = await terminal.startTerminal()
       expect(typeof info.url).toBe('string')
       expect(info.url.length).toBeGreaterThan(0)
@@ -274,7 +274,7 @@ for (const entry of providers) {
     it('exposePort returns a URL string', async () => {
       if (!entry.provider.capabilities.has('port.expose')) return
 
-      const exposable = sandbox as import('@sandbank/core').PortExposeSandbox
+      const exposable = sandbox as import('@sandbank.dev/core').PortExposeSandbox
       const { url } = await exposable.exposePort(8080)
       expect(typeof url).toBe('string')
       expect(url.length).toBeGreaterThan(0)

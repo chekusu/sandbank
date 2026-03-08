@@ -29,36 +29,36 @@ jobs:
           done
 
       # Layer 1: no internal deps
-      - name: Publish @sandbank/core
+      - name: Publish @sandbank.dev/core
         run: npm publish --provenance --access public || true
         working-directory: packages/core
 
-      - name: Publish @sandbank/relay
+      - name: Publish @sandbank.dev/relay
         run: npm publish --provenance --access public || true
         working-directory: packages/relay
 
       # Layer 2: depend on core
-      - name: Publish @sandbank/agent
+      - name: Publish @sandbank.dev/agent
         run: npm publish --provenance --access public || true
         working-directory: packages/agent
 
-      - name: Publish @sandbank/skills
+      - name: Publish @sandbank.dev/skills
         run: npm publish --provenance --access public || true
         working-directory: packages/skills
 
-      - name: Publish @sandbank/daytona
+      - name: Publish @sandbank.dev/daytona
         run: npm publish --provenance --access public || true
         working-directory: packages/daytona
 
-      - name: Publish @sandbank/flyio
+      - name: Publish @sandbank.dev/flyio
         run: npm publish --provenance --access public || true
         working-directory: packages/flyio
 
-      - name: Publish @sandbank/cloudflare
+      - name: Publish @sandbank.dev/cloudflare
         run: npm publish --provenance --access public || true
         working-directory: packages/cloudflare
 
-      - name: Publish @sandbank/boxlite
+      - name: Publish @sandbank.dev/boxlite
         run: npm publish --provenance --access public || true
         working-directory: packages/boxlite
 

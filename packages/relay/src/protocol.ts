@@ -1,4 +1,4 @@
-import type { JsonRpcRequest, JsonRpcResponse } from '@sandbank/core'
+import type { JsonRpcRequest, JsonRpcResponse } from '@sandbank.dev/core'
 import type { ConnectedClient, QueuedMessage } from './types.js'
 import type { SessionStore } from './session-store.js'
 
