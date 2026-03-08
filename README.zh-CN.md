@@ -79,7 +79,7 @@ await provider.destroy(sandbox.id)
 | 能力 | Daytona | Fly.io | Cloudflare | BoxLite | 说明 |
 |------|:-------:|:------:|:----------:|:-------:|------|
 | `volumes` | ✅ | ✅ | ⚠️* | ❌ | 持久卷管理 |
-| `port.expose` | ✅ | ✅ | ✅ | ✅ | 将沙箱端口暴露到公网 |
+| `port.expose` | ✅ | ✅ | ⚠️** | ✅ | 将沙箱端口暴露到公网 |
 | `exec.stream` | ❌ | ❌ | ✅ | ✅ | 实时流式输出 stdout/stderr |
 | `snapshot` | ❌ | ❌ | ✅ | ✅ | 沙箱状态快照与恢复 |
 | `terminal` | ✅ | ✅ | ✅ | ✅ | 交互式 Web 终端 (ttyd) |
@@ -87,6 +87,8 @@ await provider.destroy(sandbox.id)
 | `skills` | ✅ | ✅ | ✅ | ✅ | 加载并注入 Skill 定义到沙箱 |
 
 \* Cloudflare 的 `volumes` 需要在适配器配置中启用 `storage` 选项。
+
+\*\* Cloudflare 保留了 3000 端口用于沙箱控制面板，可用范围为 1024–65535（不含 3000）。
 
 ### Provider 特性对比
 

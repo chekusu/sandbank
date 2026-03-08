@@ -79,7 +79,7 @@ Capabilities are opt-in. Use `withVolumes(provider)`, `withPortExpose(sandbox)`,
 | Capability | Daytona | Fly.io | Cloudflare | BoxLite | Description |
 |------------|:-------:|:------:|:----------:|:-------:|-------------|
 | `volumes` | ✅ | ✅ | ⚠️* | ❌ | Persistent volume management |
-| `port.expose` | ✅ | ✅ | ✅ | ✅ | Expose sandbox ports to the internet |
+| `port.expose` | ✅ | ✅ | ⚠️** | ✅ | Expose sandbox ports to the internet |
 | `exec.stream` | ❌ | ❌ | ✅ | ✅ | Stream stdout/stderr in real-time |
 | `snapshot` | ❌ | ❌ | ✅ | ✅ | Snapshot and restore sandbox state |
 | `terminal` | ✅ | ✅ | ✅ | ✅ | Interactive web terminal (ttyd) |
@@ -87,6 +87,8 @@ Capabilities are opt-in. Use `withVolumes(provider)`, `withPortExpose(sandbox)`,
 | `skills` | ✅ | ✅ | ✅ | ✅ | Load and inject skill definitions into sandboxes |
 
 \* Cloudflare `volumes` requires `storage` option in adapter config.
+
+\*\* Cloudflare reserves port 3000 for its sandbox control plane. Use any port in 1024–65535 except 3000.
 
 ### Provider Characteristics
 

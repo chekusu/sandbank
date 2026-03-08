@@ -79,7 +79,7 @@ await provider.destroy(sandbox.id)
 | ケイパビリティ | Daytona | Fly.io | Cloudflare | BoxLite | 説明 |
 |--------------|:-------:|:------:|:----------:|:-------:|------|
 | `volumes` | ✅ | ✅ | ⚠️* | ❌ | 永続ボリューム管理 |
-| `port.expose` | ✅ | ✅ | ✅ | ✅ | サンドボックスポートをインターネットに公開 |
+| `port.expose` | ✅ | ✅ | ⚠️** | ✅ | サンドボックスポートをインターネットに公開 |
 | `exec.stream` | ❌ | ❌ | ✅ | ✅ | stdout/stderr のリアルタイムストリーミング |
 | `snapshot` | ❌ | ❌ | ✅ | ✅ | サンドボックス状態のスナップショットと復元 |
 | `terminal` | ✅ | ✅ | ✅ | ✅ | インタラクティブ Web ターミナル (ttyd) |
@@ -87,6 +87,8 @@ await provider.destroy(sandbox.id)
 | `skills` | ✅ | ✅ | ✅ | ✅ | スキル定義をサンドボックスにロード・注入 |
 
 \* Cloudflare の `volumes` はアダプター設定で `storage` オプションが必要です。
+
+\*\* Cloudflare はポート 3000 をサンドボックスのコントロールプレーンに予約しています。1024–65535（3000 を除く）の範囲で指定してください。
 
 ### プロバイダー特性比較
 
