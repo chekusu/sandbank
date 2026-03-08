@@ -153,7 +153,7 @@ function wrapBox(
       // 2. Start ttyd in background (-W enables write)
       await client.exec(box.box_id, {
         command: 'bash',
-        args: ['-c', `nohup ttyd -W -p ${port} ${shell} > /dev/null 2>&1 &`],
+        args: ['-c', `nohup ttyd -W -p ${port} '${shell.replace(/'/g, "'\\''")}' > /dev/null 2>&1 &`],
       })
 
       // 3. Wait for ttyd to be ready

@@ -167,7 +167,7 @@ function wrapCloudflareSandbox(
       }
 
       // 2. Start ttyd in background (-W enables write)
-      await withRetry(() => sandbox.exec(`nohup ttyd -W -p ${port} ${shell} > /dev/null 2>&1 &`))
+      await withRetry(() => sandbox.exec(`nohup ttyd -W -p ${port} '${shell.replace(/'/g, "'\\''")}' > /dev/null 2>&1 &`))
 
       // 3. Wait for ttyd to be ready (check process is running)
       await withRetry(() => sandbox.exec(

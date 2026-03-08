@@ -107,7 +107,7 @@ function wrapDaytonaSandbox(sandbox: DaytonaSandbox): AdapterSandbox {
       }
 
       // 2. Start ttyd in background (-W enables write)
-      await sandbox.process.executeCommand(`nohup ttyd -W -p ${port} ${shell} > /dev/null 2>&1 &`)
+      await sandbox.process.executeCommand(`nohup ttyd -W -p ${port} '${shell.replace(/'/g, "'\\''")}' > /dev/null 2>&1 &`)
 
       // 3. Wait for ttyd to be ready (check process is running)
       await sandbox.process.executeCommand(

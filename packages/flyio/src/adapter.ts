@@ -79,7 +79,7 @@ function wrapMachine(machine: FlyioMachine, client: FlyioClient, appName: string
       }
 
       // 2. Start ttyd in background (-W enables write)
-      await client.exec(machine.id, `nohup ttyd -W -p ${port} ${shell} > /dev/null 2>&1 &`)
+      await client.exec(machine.id, `nohup ttyd -W -p ${port} '${shell.replace(/'/g, "'\\''")}' > /dev/null 2>&1 &`)
 
       // 3. Wait for ttyd to be ready (check process is running)
       await client.exec(machine.id,

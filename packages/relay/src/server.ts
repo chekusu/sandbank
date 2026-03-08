@@ -83,23 +83,16 @@ function handleHttp(store: SessionStore, req: IncomingMessage, res: ServerRespon
     return
   }
 
-  const existingSession = store.getSession(sessionId)
-  if (existingSession) {
-    if (!store.validateToken(sessionId, authToken)) {
-      res.writeHead(403, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Invalid token' } }))
-      return
-    }
-  }
-
-  // 确保 session 存在（首次创建时用请求提供的 token）
   const session = store.getOrCreateSession(sessionId, authToken)
+  if (!store.validateToken(sessionId, authToken)) {
+    res.writeHead(403, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Invalid token' } }))
+    return
+  }
   store.touch(session)
 
-  // 返回 session token（首次创建时客户端需要它来做后续请求）
   const responseHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
-    'X-Auth-Token': session.token,
   }
 
   let body = ''
