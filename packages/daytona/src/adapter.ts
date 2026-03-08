@@ -117,7 +117,7 @@ function wrapDaytonaSandbox(sandbox: DaytonaSandbox): AdapterSandbox {
       // 4. Get the public URL via preview link
       const preview = await sandbox.getPreviewLink(port)
       const previewUrl = preview.url as string
-      const wsUrl = previewUrl.replace(/^https?/, 'wss').replace(/\/$/, '') + '/ws'
+      const wsUrl = previewUrl.replace(/^https?/, (p) => p === 'https' ? 'wss' : 'ws').replace(/\/$/, '') + '/ws'
 
       return {
         url: wsUrl,

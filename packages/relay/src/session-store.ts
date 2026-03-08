@@ -147,7 +147,11 @@ export class SessionStore {
   /** 发送消息到指定沙箱的队列 */
   enqueueMessage(session: RelaySession, to: string, msg: QueuedMessage): void {
     const queue = session.messageQueues.get(to)
-    if (!queue) return // 目标不存在，静默忽略
+    if (!queue) {
+      // 目标不是已注册沙箱 — 可能是发给 orchestrator
+      this.pushToOrchestrator(session, msg)
+      return
+    }
 
     // 队列大小限制：丢弃最旧的 normal 消息
     if (queue.length >= this.maxQueueSize) {

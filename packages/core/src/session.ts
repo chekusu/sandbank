@@ -208,7 +208,12 @@ export async function createSession(config: CreateSessionConfig): Promise<Sessio
       const sandbox = await config.provider.create({ ...sandboxConfig, env })
 
       // 在 relay 注册沙箱
-      await rpcCall('session.register', { name, sandboxId: sandbox.id })
+      try {
+        await rpcCall('session.register', { name, sandboxId: sandbox.id })
+      } catch (err) {
+        await config.provider.destroy(sandbox.id).catch(() => {})
+        throw err
+      }
 
       sandboxes.set(name, sandbox)
       return sandbox
