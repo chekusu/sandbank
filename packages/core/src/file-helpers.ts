@@ -124,7 +124,7 @@ export async function downloadArchiveViaExec(
   sandbox: AdapterSandbox,
   srcDir?: string,
 ): Promise<ReadableStream> {
-  const source = srcDir ?? '/workspace'
+  const source = srcDir ?? '/'
   const tmp = `/tmp/_sb_archive_${Date.now()}_${Math.random().toString(36).slice(2)}.tar.gz`
 
   // 打包

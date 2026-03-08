@@ -118,7 +118,7 @@ describe('downloadArchiveViaExec', () => {
     const stream = await downloadArchiveViaExec(sandbox)
 
     // Verify commands
-    expect(calls[0]).toMatch(/tar czf \/tmp\/_sb_archive_\d+_\w+\.tar\.gz -C '\/workspace' \./)
+    expect(calls[0]).toMatch(/tar czf \/tmp\/_sb_archive_\d+_\w+\.tar\.gz -C '\/' \./)
     expect(calls[1]).toMatch(/base64 \/tmp\/_sb_archive_\d+_\w+\.tar\.gz/)
     expect(calls[2]).toMatch(/rm -f \/tmp\/_sb_archive_\d+_\w+\.tar\.gz/)
 

@@ -115,8 +115,22 @@ export async function createSession(config: CreateSessionConfig): Promise<Sessio
         }
       }
     } catch {
-      // ignore
+      // ignore parse errors
     }
+  })
+
+  // Handle unexpected disconnects: reject all pending calls and waiters
+  ws.addEventListener('close', () => {
+    const err = new Error('Relay connection closed')
+    for (const [, entry] of pending) entry.reject(err)
+    pending.clear()
+    for (const [, waiters] of completionWaiters) {
+      for (const w of waiters) {
+        if (w.timer) clearTimeout(w.timer)
+        w.reject(err)
+      }
+    }
+    completionWaiters.clear()
   })
 
   const RPC_TIMEOUT_MS = 30_000
@@ -227,6 +241,8 @@ export async function createSession(config: CreateSessionConfig): Promise<Sessio
       return [...sandboxes.keys()]
     },
 
+    // Fire-and-forget: errors are passed to the onError callback (default: silent).
+    // Use onError in CreateSessionConfig to handle delivery failures.
     send(to: string, type: string, payload?: unknown, options?: SendOptions): void {
       rpcCall('message.send', {
         to,

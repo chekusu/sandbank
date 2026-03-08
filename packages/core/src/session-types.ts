@@ -85,7 +85,7 @@ export interface SendOptions {
 
 export type RelayConfig =
   | { type: 'memory' }
-  | { type: 'hosted'; url: string; apiKey?: string; token?: string }
+  | { type: 'hosted'; url: string; token?: string }
 
 // --- Create Session Config ---
 

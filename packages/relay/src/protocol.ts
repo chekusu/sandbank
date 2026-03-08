@@ -75,7 +75,9 @@ export function handleAuth(
     }
     session = existing
   } else {
-    // Session 不存在 → 创建（如果提供了 token 就用它，否则自动生成）
+    // Session 不存在 → 创建。This is the primary session creation path for
+    // orchestrators connecting via WebSocket. The relay should be bound to
+    // trusted networks (default: 127.0.0.1). maxSessions limits DoS risk.
     session = store.getOrCreateSession(sessionId, token)
   }
 
