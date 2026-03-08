@@ -87,9 +87,23 @@ function handleHttp(store: SessionStore, req: IncomingMessage, res: ServerRespon
     'Content-Type': 'application/json',
   }
 
+  const MAX_BODY_SIZE = 1 * 1024 * 1024 // 1MB
   let body = ''
-  req.on('data', (chunk: Buffer) => { body += chunk.toString() })
+  let bodySize = 0
+  let aborted = false
+  req.on('data', (chunk: Buffer) => {
+    bodySize += chunk.length
+    if (bodySize > MAX_BODY_SIZE) {
+      aborted = true
+      res.writeHead(413, responseHeaders)
+      res.end(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Payload too large' } }))
+      req.destroy()
+      return
+    }
+    body += chunk.toString()
+  })
   req.on('end', () => {
+    if (aborted) return
     let request: JsonRpcRequest
     try {
       request = JSON.parse(body) as JsonRpcRequest

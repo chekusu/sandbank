@@ -204,33 +204,44 @@ export async function createSession(config: CreateSessionConfig): Promise<Sessio
     id: sessionId,
 
     async spawn(name: string, sandboxConfig: CreateConfig): Promise<Sandbox> {
+      if (sandboxes.has(name)) {
+        throw new Error(`Sandbox name already in use: "${name}"`)
+      }
       const maxSandboxes = config.maxSandboxes ?? 10
       if (sandboxes.size >= maxSandboxes) {
         throw new Error(`Max sandboxes (${maxSandboxes}) reached`)
       }
 
-      // 注入 relay 环境变量
-      const env = {
-        ...sandboxConfig.env,
-        SANDBANK_RELAY_URL: relayUrl,
-        SANDBANK_WS_URL: wsUrl,
-        SANDBANK_SESSION_ID: sessionId,
-        SANDBANK_SANDBOX_NAME: name,
-        SANDBANK_AUTH_TOKEN: sessionToken,
-      }
+      // Reserve the name to prevent concurrent spawn with same name or exceeding max
+      sandboxes.set(name, null as unknown as Sandbox)
 
-      const sandbox = await config.provider.create({ ...sandboxConfig, env })
-
-      // 在 relay 注册沙箱
       try {
-        await rpcCall('session.register', { name, sandboxId: sandbox.id })
+        // 注入 relay 环境变量
+        const env = {
+          ...sandboxConfig.env,
+          SANDBANK_RELAY_URL: relayUrl,
+          SANDBANK_WS_URL: wsUrl,
+          SANDBANK_SESSION_ID: sessionId,
+          SANDBANK_SANDBOX_NAME: name,
+          SANDBANK_AUTH_TOKEN: sessionToken,
+        }
+
+        const sandbox = await config.provider.create({ ...sandboxConfig, env })
+
+        // 在 relay 注册沙箱
+        try {
+          await rpcCall('session.register', { name, sandboxId: sandbox.id })
+        } catch (err) {
+          await config.provider.destroy(sandbox.id).catch(() => {})
+          throw err
+        }
+
+        sandboxes.set(name, sandbox)
+        return sandbox
       } catch (err) {
-        await config.provider.destroy(sandbox.id).catch(() => {})
+        sandboxes.delete(name)
         throw err
       }
-
-      sandboxes.set(name, sandbox)
-      return sandbox
     },
 
     getSandbox(name: string): Sandbox | undefined {
@@ -329,13 +340,17 @@ export async function createSession(config: CreateSessionConfig): Promise<Sessio
       completionWaiters.clear()
 
       // 并行销毁所有沙箱（在断开 WebSocket 前，确保 relay 仍可达）
+      // Filter out null placeholders from in-progress spawns
       await Promise.allSettled(
-        [...sandboxes.values()].map(sandbox => config.provider.destroy(sandbox.id))
+        [...sandboxes.values()].filter(Boolean).map(sandbox => config.provider.destroy(sandbox.id))
       )
       sandboxes.clear()
 
-      // 断开 WebSocket
-      ws.close()
+      // 断开 WebSocket 并等待关闭完成
+      await new Promise<void>((resolve) => {
+        ws.addEventListener('close', () => resolve(), { once: true })
+        ws.close()
+      })
 
       // 关闭 relay
       await closeRelay()
