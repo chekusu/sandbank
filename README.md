@@ -70,6 +70,7 @@ All providers implement these — the minimum contract:
 | List sandboxes | ✅ | ✅ | ✅ | ✅ |
 | Execute commands | ✅ | ✅ | ✅ | ✅ |
 | Read / Write files | ✅ | ✅ | ✅ | ✅ |
+| Skill injection | ✅ | ✅ | ✅ | ✅ |
 
 ### Extended Capabilities
 
@@ -83,6 +84,7 @@ Capabilities are opt-in. Use `withVolumes(provider)`, `withPortExpose(sandbox)`,
 | `snapshot` | ❌ | ❌ | ✅ | ✅ | Snapshot and restore sandbox state |
 | `terminal` | ✅ | ✅ | ✅ | ✅ | Interactive web terminal (ttyd) |
 | `sleep` | ❌ | ❌ | ❌ | ✅ | Hibernate and wake sandboxes |
+| `skills` | ✅ | ✅ | ✅ | ✅ | Load and inject skill definitions into sandboxes |
 
 \* Cloudflare `volumes` requires `storage` option in adapter config.
 

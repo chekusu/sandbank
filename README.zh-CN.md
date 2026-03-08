@@ -70,6 +70,7 @@ await provider.destroy(sandbox.id)
 | 列出沙箱 | ✅ | ✅ | ✅ | ✅ |
 | 执行命令 | ✅ | ✅ | ✅ | ✅ |
 | 读写文件 | ✅ | ✅ | ✅ | ✅ |
+| Skill 注入 | ✅ | ✅ | ✅ | ✅ |
 
 ### 扩展能力
 
@@ -83,6 +84,7 @@ await provider.destroy(sandbox.id)
 | `snapshot` | ❌ | ❌ | ✅ | ✅ | 沙箱状态快照与恢复 |
 | `terminal` | ✅ | ✅ | ✅ | ✅ | 交互式 Web 终端 (ttyd) |
 | `sleep` | ❌ | ❌ | ❌ | ✅ | 休眠与唤醒 |
+| `skills` | ✅ | ✅ | ✅ | ✅ | 加载并注入 Skill 定义到沙箱 |
 
 \* Cloudflare 的 `volumes` 需要在适配器配置中启用 `storage` 选项。
 

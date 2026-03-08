@@ -70,6 +70,7 @@ await provider.destroy(sandbox.id)
 | サンドボックス一覧 | ✅ | ✅ | ✅ | ✅ |
 | コマンド実行 | ✅ | ✅ | ✅ | ✅ |
 | ファイル読み書き | ✅ | ✅ | ✅ | ✅ |
+| スキル注入 | ✅ | ✅ | ✅ | ✅ |
 
 ### 拡張ケイパビリティ
 
@@ -83,6 +84,7 @@ await provider.destroy(sandbox.id)
 | `snapshot` | ❌ | ❌ | ✅ | ✅ | サンドボックス状態のスナップショットと復元 |
 | `terminal` | ✅ | ✅ | ✅ | ✅ | インタラクティブ Web ターミナル (ttyd) |
 | `sleep` | ❌ | ❌ | ❌ | ✅ | サンドボックスの休止と復帰 |
+| `skills` | ✅ | ✅ | ✅ | ✅ | スキル定義をサンドボックスにロード・注入 |
 
 \* Cloudflare の `volumes` はアダプター設定で `storage` オプションが必要です。
 
