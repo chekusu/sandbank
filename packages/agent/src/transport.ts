@@ -41,6 +41,7 @@ export function createWebSocketTransport(url: string): Promise<Transport> {
         listeners.push(fn)
       },
       close() {
+        listeners.length = 0
         ws.close()
       },
       get readyState() {

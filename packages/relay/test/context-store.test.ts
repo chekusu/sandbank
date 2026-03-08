@@ -50,7 +50,7 @@ describe('ContextStoreServer', () => {
     ctx.watch(fn)
 
     ctx.delete('key1')
-    expect(fn).toHaveBeenCalledWith('key1', undefined)
+    expect(fn).toHaveBeenCalledWith('key1', null)
   })
 
   it('should unwatch', () => {

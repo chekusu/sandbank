@@ -289,6 +289,8 @@ export async function createSession(config: CreateSessionConfig): Promise<Sessio
     },
 
     async waitForAll(timeoutMs?: number): Promise<SandboxCompletion[]> {
+      // Note: uses a snapshot of sandbox names at call time.
+      // Sandboxes spawned after this call will not be waited for.
       const names = [...sandboxes.keys()]
       const promises = names.map((name) => session.waitFor(name, timeoutMs))
       return Promise.all(promises)

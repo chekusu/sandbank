@@ -83,14 +83,6 @@ function handleHttp(store: SessionStore, req: IncomingMessage, res: ServerRespon
     return
   }
 
-  const session = store.getOrCreateSession(sessionId, authToken)
-  if (!store.validateToken(sessionId, authToken)) {
-    res.writeHead(403, { 'Content-Type': 'application/json' })
-    res.end(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Invalid token' } }))
-    return
-  }
-  store.touch(session)
-
   const responseHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
   }
@@ -106,6 +98,25 @@ function handleHttp(store: SessionStore, req: IncomingMessage, res: ServerRespon
       res.end(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } }))
       return
     }
+
+    // Session resolution: existing sessions require valid token;
+    // new sessions can only be created via session.register
+    let session = store.getSession(sessionId)
+    if (session) {
+      if (!store.validateToken(sessionId, authToken)) {
+        res.writeHead(403, responseHeaders)
+        res.end(JSON.stringify({ jsonrpc: '2.0', id: request.id, error: { code: -32600, message: 'Invalid token' } }))
+        return
+      }
+    } else {
+      if (request.method !== 'session.register') {
+        res.writeHead(403, responseHeaders)
+        res.end(JSON.stringify({ jsonrpc: '2.0', id: request.id, error: { code: -32600, message: 'Session not found' } }))
+        return
+      }
+      session = store.createSession(sessionId, authToken)
+    }
+    store.touch(session)
 
     const client = {
       sessionId,

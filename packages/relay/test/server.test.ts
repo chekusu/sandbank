@@ -46,12 +46,6 @@ async function httpRpc(
     body: JSON.stringify(request),
   })
 
-  // 缓存响应中返回的 token
-  const token = res.headers.get('X-Auth-Token')
-  if (sessionId && token) {
-    sessionTokens.set(sessionId, token)
-  }
-
   return res.json() as Promise<JsonRpcResponse>
 }
 
@@ -100,6 +94,9 @@ describe('relay server', () => {
     relay = await startRelay({ port: 0 })
     const sessionId = 'ctx-session'
 
+    // Create session via session.register first
+    await httpRpc(relay.url, 'session.register', { name: 'ctx-agent', sandboxId: 'sb-ctx' }, { 'X-Session-Id': sessionId })
+
     // Set
     await httpRpc(relay.url, 'context.set', { key: 'api-spec', value: { version: 2 } }, { 'X-Session-Id': sessionId })
 
@@ -132,8 +129,8 @@ describe('relay server', () => {
     relay = await startRelay({ port: 0 })
     const sessionId = 'token-test'
 
-    // First request creates session
-    await httpRpc(relay.url, 'context.keys', undefined, { 'X-Session-Id': sessionId })
+    // First request creates session via session.register
+    await httpRpc(relay.url, 'session.register', { name: 'tok-agent', sandboxId: 'sb-tok' }, { 'X-Session-Id': sessionId })
 
     // Request with wrong token should be rejected
     const res = await fetch(`${relay.url}/rpc`, {
@@ -152,8 +149,8 @@ describe('relay server', () => {
     relay = await startRelay({ port: 0 })
     const sessionId = 'no-token-test'
 
-    // First request creates session
-    await httpRpc(relay.url, 'context.keys', undefined, { 'X-Session-Id': sessionId })
+    // First request creates session via session.register
+    await httpRpc(relay.url, 'session.register', { name: 'notok-agent', sandboxId: 'sb-notok' }, { 'X-Session-Id': sessionId })
 
     // Request without token should be rejected
     const res = await fetch(`${relay.url}/rpc`, {
@@ -227,8 +224,8 @@ describe('relay server', () => {
     relay = await startRelay({ port: 0 })
     const sessionId = 'ws-no-token'
 
-    // Create session via HTTP first
-    await httpRpc(relay.url, 'context.keys', undefined, { 'X-Session-Id': sessionId })
+    // Create session via HTTP session.register first
+    await httpRpc(relay.url, 'session.register', { name: 'ws-agent', sandboxId: 'sb-ws' }, { 'X-Session-Id': sessionId })
 
     // Try WS auth without token
     const ws = new WebSocket(relay.wsUrl)

@@ -19,7 +19,7 @@ export class ContextStoreServer {
     const existed = this.data.delete(key)
     if (existed) {
       for (const fn of this.watchers) {
-        fn(key, undefined)
+        fn(key, null)
       }
     }
     return existed

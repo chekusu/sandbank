@@ -48,7 +48,7 @@ function wrapMachine(machine: FlyioMachine, client: FlyioClient, appName: string
 
     async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
       const cmd = options?.cwd
-        ? `cd ${JSON.stringify(options.cwd)} && ${command}`
+        ? `cd '${options.cwd.replace(/'/g, "'\\''")}' && ${command}`
         : command
       const result = await client.exec(machine.id, cmd)
       return {

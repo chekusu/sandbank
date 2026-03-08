@@ -251,7 +251,7 @@ function handleContextDelete(
   if (!key) return rpcError(id, -32602, 'Missing key')
 
   ctx.delete(key)
-  ctx.notifyClients(session.clients, key, undefined, changedBy)
+  ctx.notifyClients(session.clients, key, null, changedBy)
   return rpcResult(id, { ok: true })
 }
 

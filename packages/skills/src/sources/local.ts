@@ -8,6 +8,9 @@ export function createLocalSource(dir: string): SkillSource {
     name: 'local',
 
     async load(name: string): Promise<SkillDefinition | undefined> {
+      if (!name || name === '.' || name === '..' || name.includes('/') || name.includes('\\')) {
+        return undefined
+      }
       const filePath = join(dir, `${name}.md`)
       try {
         const content = await readFile(filePath, 'utf-8')
