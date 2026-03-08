@@ -1,6 +1,6 @@
 {
   "name": "@sandbank.dev/core",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Unified sandbox SDK for AI agents — provider abstraction, capability system, and error types",
   "license": "MIT",
   "type": "module",

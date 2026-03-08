@@ -1,6 +1,6 @@
 {
   "name": "@sandbank.dev/skills",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Skill registry and loading for Sandbank agents",
   "license": "MIT",
   "type": "module",

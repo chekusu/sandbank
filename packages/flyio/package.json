@@ -1,6 +1,6 @@
 {
   "name": "@sandbank.dev/flyio",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Fly.io Machines sandbox adapter for Sandbank",
   "license": "MIT",
   "type": "module",
