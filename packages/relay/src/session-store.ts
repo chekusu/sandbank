@@ -230,6 +230,13 @@ export class SessionStore {
     const existing = this.drainQueue(session, sandboxName, limit)
     if (existing.length > 0) return Promise.resolve(existing)
 
+    // 限制每个沙箱的并发 long-poll waiter 数
+    const MAX_POLL_WAITERS = 10
+    const currentWaiters = session.pollWaiters.get(sandboxName)
+    if (currentWaiters && currentWaiters.length >= MAX_POLL_WAITERS) {
+      return Promise.resolve([])
+    }
+
     // 没有消息，挂起等待
     return new Promise((resolve) => {
       const timer = setTimeout(() => {

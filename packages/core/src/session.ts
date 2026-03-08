@@ -11,6 +11,7 @@ import type {
   JsonRpcNotification,
 } from './session-types.js'
 import type { Sandbox, CreateConfig } from './types.js'
+import { randomUUID } from 'node:crypto'
 
 export async function createSession(config: CreateSessionConfig): Promise<Session> {
   let rpcId = 1
@@ -18,7 +19,7 @@ export async function createSession(config: CreateSessionConfig): Promise<Sessio
     return { jsonrpc: '2.0', id: rpcId++, method, ...(params ? { params } : {}) }
   }
 
-  const sessionId = `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const sessionId = `session-${randomUUID()}`
   const relayConfig = config.relay ?? { type: 'memory' as const }
   const onError = config.onError ?? (() => {})
 
@@ -245,11 +246,14 @@ export async function createSession(config: CreateSessionConfig): Promise<Sessio
     },
 
     getSandbox(name: string): Sandbox | undefined {
-      return sandboxes.get(name)
+      const sb = sandboxes.get(name)
+      return sb ?? undefined // filter out null placeholders from in-flight spawns
     },
 
     listSandboxes(): string[] {
-      return [...sandboxes.keys()]
+      return [...sandboxes.entries()]
+        .filter(([, sb]) => sb != null)
+        .map(([name]) => name)
     },
 
     // Fire-and-forget: errors are passed to the onError callback (default: silent).
