@@ -4,6 +4,7 @@
   "description": "WebSocket relay server for multi-agent communication in Sandbank",
   "license": "MIT",
   "type": "module",
+  "homepage": "https://sandbank.dev",
   "repository": {
     "type": "git",
     "url": "https://github.com/chekusu/sandbank.git",

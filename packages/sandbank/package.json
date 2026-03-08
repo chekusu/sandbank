@@ -1,36 +1,44 @@
 {
-  "name": "@sandbank/daytona",
+  "name": "sandbank",
   "version": "0.1.0",
-  "description": "Daytona cloud sandbox adapter for Sandbank",
+  "description": "Unified sandbox SDK for AI agents — write once, run on any cloud",
   "license": "MIT",
   "type": "module",
-  "homepage": "https://sandbank.dev",
   "repository": {
     "type": "git",
     "url": "https://github.com/chekusu/sandbank.git",
-    "directory": "packages/daytona"
+    "directory": "packages/sandbank"
   },
-  "keywords": ["sandbox", "ai-agent", "daytona", "cloud"],
+  "homepage": "https://sandbank.dev",
+  "keywords": [
+    "sandbox",
+    "ai-agent",
+    "ai",
+    "agent",
+    "cloud",
+    "sdk",
+    "daytona",
+    "flyio",
+    "cloudflare",
+    "multi-agent",
+    "orchestration"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     }
   },
-  "files": [
-    "dist"
-  ],
+  "files": ["dist"],
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@daytonaio/sdk": "^0.144.0",
     "@sandbank/core": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^25.3.0",
     "typescript": "^5.7.3"
   }
 }

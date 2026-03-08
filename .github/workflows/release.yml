@@ -4,10 +4,6 @@ on:
   push:
     tags: ["v*"]
 
-permissions:
-  contents: write
-  id-token: write
-
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -21,9 +17,52 @@ jobs:
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
-          cache: pnpm
+      - run: npm install -g npm@latest
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: pnpm -r publish --provenance --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Resolve workspace references
+        run: |
+          VERSION=$(node -p "require('./packages/core/package.json').version")
+          for pkg in agent boxlite cloudflare daytona flyio relay sandbank skills; do
+            sed -i "s|\"workspace:\\*\"|\"\^$VERSION\"|g" packages/$pkg/package.json
+          done
+
+      # Layer 1: no internal deps
+      - name: Publish @sandbank/core
+        run: npm publish --provenance --access public || true
+        working-directory: packages/core
+
+      - name: Publish @sandbank/relay
+        run: npm publish --provenance --access public || true
+        working-directory: packages/relay
+
+      # Layer 2: depend on core
+      - name: Publish @sandbank/agent
+        run: npm publish --provenance --access public || true
+        working-directory: packages/agent
+
+      - name: Publish @sandbank/skills
+        run: npm publish --provenance --access public || true
+        working-directory: packages/skills
+
+      - name: Publish @sandbank/daytona
+        run: npm publish --provenance --access public || true
+        working-directory: packages/daytona
+
+      - name: Publish @sandbank/flyio
+        run: npm publish --provenance --access public || true
+        working-directory: packages/flyio
+
+      - name: Publish @sandbank/cloudflare
+        run: npm publish --provenance --access public || true
+        working-directory: packages/cloudflare
+
+      - name: Publish @sandbank/boxlite
+        run: npm publish --provenance --access public || true
+        working-directory: packages/boxlite
+
+      # Layer 3: main package
+      - name: Publish sandbank
+        run: npm publish --provenance --access public || true
+        working-directory: packages/sandbank

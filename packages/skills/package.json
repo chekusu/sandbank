@@ -4,6 +4,7 @@
   "description": "Skill registry and loading for Sandbank agents",
   "license": "MIT",
   "type": "module",
+  "homepage": "https://sandbank.dev",
   "repository": {
     "type": "git",
     "url": "https://github.com/chekusu/sandbank.git",

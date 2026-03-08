@@ -4,6 +4,7 @@
   "description": "Unified sandbox SDK for AI agents — provider abstraction, capability system, and error types",
   "license": "MIT",
   "type": "module",
+  "homepage": "https://sandbank.dev",
   "repository": {
     "type": "git",
     "url": "https://github.com/chekusu/sandbank.git",

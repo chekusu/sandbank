@@ -4,6 +4,7 @@
   "description": "Cloudflare Workers sandbox adapter for Sandbank",
   "license": "MIT",
   "type": "module",
+  "homepage": "https://sandbank.dev",
   "repository": {
     "type": "git",
     "url": "https://github.com/chekusu/sandbank.git",
