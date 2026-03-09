@@ -7,6 +7,7 @@ import {
   withPortExpose,
   withSnapshot,
   withVolumes,
+  withServices,
 } from '../src/capabilities.js'
 import type {
   Sandbox,
@@ -133,5 +134,21 @@ describe('withVolumes', () => {
 
   it('returns null when volume methods missing', () => {
     expect(withVolumes(mockProvider([]))).toBeNull()
+  })
+})
+
+describe('withServices', () => {
+  it('returns ServiceProvider when service methods exist', () => {
+    const provider = mockProvider(['services'], {
+      createService: async () => ({ id: 's1', type: 'postgres', name: 'db', state: 'ready', credentials: { url: '', env: {} } }),
+      getService: async () => ({ id: 's1', type: 'postgres', name: 'db', state: 'ready', credentials: { url: '', env: {} } }),
+      listServices: async () => [],
+      destroyService: async () => {},
+    })
+    expect(withServices(provider)).not.toBeNull()
+  })
+
+  it('returns null when service methods missing', () => {
+    expect(withServices(mockProvider([]))).toBeNull()
   })
 })

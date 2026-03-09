@@ -205,6 +205,206 @@ describe('createProvider', () => {
     expect(provider.capabilities.has('sleep')).toBe(true)
   })
 
+  it('exposes service methods when adapter declares services capability and has methods', async () => {
+    const adapter = mockAdapter({
+      capabilities: new Set<Capability>(['services']),
+      createService: vi.fn(async () => ({ id: 's1', type: 'postgres' as const, name: 'db', state: 'ready' as const, credentials: { url: 'postgres://...', env: { DATABASE_URL: 'postgres://...' } } })),
+      getService: vi.fn(async () => ({ id: 's1', type: 'postgres' as const, name: 'db', state: 'ready' as const, credentials: { url: 'postgres://...', env: { DATABASE_URL: 'postgres://...' } } })),
+      listServices: vi.fn(async () => []),
+      destroyService: vi.fn(async () => {}),
+    })
+    const provider = createProvider(adapter) as any
+    expect(typeof provider.createService).toBe('function')
+    expect(typeof provider.getService).toBe('function')
+    expect(typeof provider.listServices).toBe('function')
+    expect(typeof provider.destroyService).toBe('function')
+  })
+
+  it('does not expose service methods when adapter declares services but missing methods', async () => {
+    const adapter = mockAdapter({
+      capabilities: new Set<Capability>(['services']),
+    })
+    const provider = createProvider(adapter) as any
+    expect(provider.createService).toBeUndefined()
+  })
+
+  it('injects service credentials as env vars when services are bound', async () => {
+    const createSandbox = vi.fn(async (config: any) => {
+      // Capture the config to verify env was merged
+      return mockAdapterSandbox()
+    })
+    const adapter = mockAdapter({
+      capabilities: new Set<Capability>(['services']),
+      createSandbox,
+      createService: vi.fn(),
+      getService: vi.fn(async () => ({
+        id: 's1',
+        type: 'postgres' as const,
+        name: 'db',
+        state: 'ready' as const,
+        credentials: {
+          url: 'postgres://host:5432/db',
+          env: { DATABASE_URL: 'postgres://host:5432/db', PGHOST: 'host' },
+        },
+      })),
+      listServices: vi.fn(async () => []),
+      destroyService: vi.fn(async () => {}),
+    })
+    const provider = createProvider(adapter)
+    await provider.create({
+      image: 'node:22',
+      env: { EXISTING: 'val' },
+      services: [{ id: 's1' }],
+    })
+    expect(createSandbox).toHaveBeenCalledWith(
+      expect.objectContaining({
+        env: {
+          EXISTING: 'val',
+          DATABASE_URL: 'postgres://host:5432/db',
+          PGHOST: 'host',
+        },
+      }),
+    )
+  })
+
+  it('applies envPrefix to service credentials', async () => {
+    const createSandbox = vi.fn(async () => mockAdapterSandbox())
+    const adapter = mockAdapter({
+      capabilities: new Set<Capability>(['services']),
+      createSandbox,
+      createService: vi.fn(),
+      getService: vi.fn(async () => ({
+        id: 's1',
+        type: 'postgres' as const,
+        name: 'db',
+        state: 'ready' as const,
+        credentials: {
+          url: 'postgres://host:5432/db',
+          env: { DATABASE_URL: 'postgres://host:5432/db' },
+        },
+      })),
+      listServices: vi.fn(async () => []),
+      destroyService: vi.fn(async () => {}),
+    })
+    const provider = createProvider(adapter)
+    await provider.create({
+      image: 'node:22',
+      services: [{ id: 's1', envPrefix: 'BRAIN' }],
+    })
+    expect(createSandbox).toHaveBeenCalledWith(
+      expect.objectContaining({
+        env: { BRAIN_DATABASE_URL: 'postgres://host:5432/db' },
+      }),
+    )
+  })
+
+  it('throws when bound service is not ready', async () => {
+    const adapter = mockAdapter({
+      capabilities: new Set<Capability>(['services']),
+      createService: vi.fn(),
+      getService: vi.fn(async () => ({
+        id: 's1',
+        type: 'postgres' as const,
+        name: 'db',
+        state: 'creating' as const,
+        credentials: { url: '', env: {} },
+      })),
+      listServices: vi.fn(async () => []),
+      destroyService: vi.fn(async () => {}),
+    })
+    const provider = createProvider(adapter)
+    await expect(
+      provider.create({ image: 'node:22', services: [{ id: 's1' }] }),
+    ).rejects.toThrow('not ready')
+  })
+
+  it('throws CapabilityNotSupportedError when services bound but adapter has no getService', async () => {
+    const adapter = mockAdapter({
+      // No getService — should throw, not silently skip
+    })
+    const provider = createProvider(adapter)
+    await expect(
+      provider.create({
+        image: 'node:22',
+        services: [{ id: 's1' }],
+      }),
+    ).rejects.toThrow("Capability 'services' is not supported")
+  })
+
+  it('last service binding wins when credential keys collide without envPrefix', async () => {
+    const createSandbox = vi.fn(async () => mockAdapterSandbox())
+    let callCount = 0
+    const adapter = mockAdapter({
+      capabilities: new Set<Capability>(['services']),
+      createSandbox,
+      createService: vi.fn(),
+      getService: vi.fn(async (id: string) => ({
+        id,
+        type: 'postgres' as const,
+        name: id,
+        state: 'ready' as const,
+        credentials: {
+          url: `postgres://${id}`,
+          env: { DATABASE_URL: `postgres://${id}` },
+        },
+      })),
+      listServices: vi.fn(async () => []),
+      destroyService: vi.fn(async () => {}),
+    })
+    const provider = createProvider(adapter)
+    await provider.create({
+      image: 'node:22',
+      services: [{ id: 's1' }, { id: 's2' }],
+    })
+    // s2 should overwrite s1's DATABASE_URL
+    expect(createSandbox).toHaveBeenCalledWith(
+      expect.objectContaining({
+        env: { DATABASE_URL: 'postgres://s2' },
+      }),
+    )
+  })
+
+  it('exposes both volume and service methods when adapter declares both capabilities', () => {
+    const adapter = mockAdapter({
+      capabilities: new Set<Capability>(['volumes', 'services']),
+      createVolume: vi.fn(async () => ({ id: 'v1', name: 'vol', sizeGB: 1, attachedTo: null })),
+      deleteVolume: vi.fn(async () => {}),
+      listVolumes: vi.fn(async () => []),
+      createService: vi.fn(async () => ({ id: 's1', type: 'postgres' as const, name: 'db', state: 'ready' as const, credentials: { url: '', env: {} } })),
+      getService: vi.fn(async () => ({ id: 's1', type: 'postgres' as const, name: 'db', state: 'ready' as const, credentials: { url: '', env: {} } })),
+      listServices: vi.fn(async () => []),
+      destroyService: vi.fn(async () => {}),
+    })
+    const provider = createProvider(adapter) as any
+    // Both volume AND service methods should be present
+    expect(typeof provider.createVolume).toBe('function')
+    expect(typeof provider.deleteVolume).toBe('function')
+    expect(typeof provider.listVolumes).toBe('function')
+    expect(typeof provider.createService).toBe('function')
+    expect(typeof provider.getService).toBe('function')
+    expect(typeof provider.listServices).toBe('function')
+    expect(typeof provider.destroyService).toBe('function')
+  })
+
+  it('calls destroySandbox when skill injection fails', async () => {
+    const destroySandbox = vi.fn(async () => {})
+    const execFn = vi.fn(async () => ({ exitCode: 0, stdout: '', stderr: '' }))
+    // writeFile will throw to simulate skill injection failure
+    const writeFile = vi.fn(async () => { throw new Error('write failed') })
+    const adapter = mockAdapter({
+      createSandbox: async () => mockAdapterSandbox({ exec: execFn, writeFile }),
+      destroySandbox,
+    })
+    const provider = createProvider(adapter)
+    await expect(
+      provider.create({
+        image: 'node:22',
+        skills: [{ name: 'test', content: 'hello' }],
+      }),
+    ).rejects.toThrow('write failed')
+    expect(destroySandbox).toHaveBeenCalledWith('sb-mock')
+  })
+
   it('forwards optional capability methods on sandbox', async () => {
     const execStreamFn = vi.fn(async () => new ReadableStream())
     const sleepFn = vi.fn(async () => {})
