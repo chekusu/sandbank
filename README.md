@@ -38,10 +38,12 @@ Swap `DaytonaAdapter` for `FlyioAdapter` or `CloudflareAdapter` — zero code ch
 ├──────────────────────────────────────────────────────┤
 │  @sandbank.dev/daytona  @sandbank.dev/flyio  @sandbank.dev/cloudflare  │
 │  @sandbank.dev/boxlite                                   │
-│  Provider Adapters                                   │
+│  Provider Adapters (Compute)                         │
+├──────────────────────────────────────────────────────┤
+│  @sandbank.dev/db9       Service Adapter (Data)      │
 ├──────────────────────────────────────────────────────┤
 │  Daytona    Fly.io Machines    Cloudflare Workers     │
-│  BoxLite (self-hosted Docker)                        │
+│  BoxLite (self-hosted Docker)    db9.ai (PostgreSQL)  │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -55,6 +57,7 @@ Swap `DaytonaAdapter` for `FlyioAdapter` or `CloudflareAdapter` — zero code ch
 | [`@sandbank.dev/flyio`](./packages/flyio) | Fly.io Machines adapter |
 | [`@sandbank.dev/cloudflare`](./packages/cloudflare) | Cloudflare Workers adapter |
 | [`@sandbank.dev/boxlite`](./packages/boxlite) | BoxLite self-hosted Docker adapter |
+| [`@sandbank.dev/db9`](./packages/db9) | db9.ai serverless PostgreSQL adapter (ServiceProvider) |
 | [`@sandbank.dev/relay`](./packages/relay) | WebSocket relay for multi-agent communication |
 | [`@sandbank.dev/agent`](./packages/agent) | Lightweight client for agents running inside sandboxes |
 
@@ -85,6 +88,7 @@ Capabilities are opt-in. Use `withVolumes(provider)`, `withPortExpose(sandbox)`,
 | `terminal` | ✅ | ✅ | ✅ | ✅ | Interactive web terminal (ttyd) |
 | `sleep` | ❌ | ❌ | ❌ | ✅ | Hibernate and wake sandboxes |
 | `skills` | ✅ | ✅ | ✅ | ✅ | Load and inject skill definitions into sandboxes |
+| `services` | ❌ | ❌ | ❌ | ❌ | Bind data services (e.g. db9 PostgreSQL) to sandboxes |
 
 \* Cloudflare `volumes` requires `storage` option in adapter config.
 
@@ -214,6 +218,22 @@ FLY_API_TOKEN=... FLY_APP_NAME=... pnpm test
 
 # Cloudflare
 E2E_WORKER_URL=... pnpm test
+
+# db9
+DB9_TOKEN=... pnpm --filter @sandbank.dev/db9 test:e2e
+```
+
+## Test Coverage
+
+| Package | Stmts | Branch | Funcs | Lines | Unit | Integration |
+|---------|:-----:|:------:|:-----:|:-----:|:----:|:-----------:|
+| `@sandbank.dev/core` | 84% | 77% | 74% | 88% | 98 | — |
+| `@sandbank.dev/db9` | 100% | 97% | 93% | 100% | 35 | 3 |
+
+Run coverage locally:
+
+```bash
+pnpm --filter @sandbank.dev/db9 test -- --coverage
 ```
 
 ## Design Principles
