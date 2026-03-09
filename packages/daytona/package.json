@@ -1,6 +1,6 @@
 {
   "name": "@sandbank.dev/daytona",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Daytona cloud sandbox adapter for Sandbank",
   "license": "MIT",
   "type": "module",
@@ -26,10 +26,18 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@daytonaio/sdk": "^0.144.0",
     "@sandbank.dev/core": "workspace:*"
   },
+  "peerDependencies": {
+    "@daytonaio/sdk": "^0.144.0"
+  },
+  "peerDependenciesMeta": {
+    "@daytonaio/sdk": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@daytonaio/sdk": "^0.144.0",
     "@types/node": "^25.3.0",
     "typescript": "^5.7.3"
   }

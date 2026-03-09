@@ -14,13 +14,15 @@ import type {
   VolumeInfo,
 } from '@sandbank.dev/core'
 import { SandboxNotFoundError, ProviderError } from '@sandbank.dev/core'
-import type { Daytona as DaytonaClient, Sandbox as DaytonaSandbox } from '@daytonaio/sdk'
+import type {
+  DaytonaAdapterConfig,
+  DaytonaClient,
+  DaytonaSandboxData,
+  DaytonaSDKConfig,
+} from './types.js'
+import { createDaytonaRestClient } from './rest-client.js'
 
-export interface DaytonaAdapterConfig {
-  apiKey: string
-  apiUrl?: string
-  target?: string
-}
+export type { DaytonaAdapterConfig }
 
 /** Map Daytona's SandboxState to our SandboxState */
 function mapState(daytonaState: string): SandboxState {
@@ -51,80 +53,65 @@ function mapState(daytonaState: string): SandboxState {
   }
 }
 
-/** Wrap a Daytona SDK sandbox into an AdapterSandbox */
-function wrapDaytonaSandbox(sandbox: DaytonaSandbox): AdapterSandbox {
+/** Wrap sandbox data + client into an AdapterSandbox */
+function wrapSandboxData(client: DaytonaClient, data: DaytonaSandboxData): AdapterSandbox {
   return {
-    get id() { return sandbox.id as string },
-    get state() { return mapState(sandbox.state as string) },
-    get createdAt() { return ((sandbox as unknown as Record<string, unknown>)['createdAt'] ?? new Date().toISOString()) as string },
+    get id() { return data.id },
+    get state() { return mapState(data.state) },
+    get createdAt() { return data.createdAt },
 
     async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
-      const response = await sandbox.process.executeCommand(
-        command,
-        options?.cwd,
-        undefined, // env
-        options?.timeout,
-      )
+      const result = await client.exec(data.id, command, options?.cwd, options?.timeout)
       return {
-        exitCode: response.exitCode as number,
-        stdout: (response.artifacts?.stdout ?? response.result ?? '') as string,
-        stderr: '', // Daytona SDK does not separate stderr
+        exitCode: result.exitCode,
+        stdout: result.stdout,
+        stderr: '', // Daytona does not separate stderr
       }
     },
 
     async writeFile(path: string, content: string | Uint8Array): Promise<void> {
-      // Daytona SDK requires Node.js Buffer
-      const buffer = typeof content === 'string'
-        ? Buffer.from(content, 'utf-8')
-        : Buffer.from(content)
-      await sandbox.fs.uploadFile(buffer, path)
+      await client.writeFile(data.id, path, content)
     },
 
     async readFile(path: string): Promise<Uint8Array> {
-      const buffer: Buffer = await sandbox.fs.downloadFile(path)
-      return new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength)
+      return client.readFile(data.id, path)
     },
 
     async exposePort(port: number): Promise<{ url: string }> {
-      const preview = await sandbox.getPreviewLink(port)
-      return { url: preview.url as string }
+      const url = await client.getPreviewUrl(data.id, port)
+      return { url }
     },
 
     async startTerminal(options?: TerminalOptions): Promise<TerminalInfo> {
       const port = 7681
       const shell = options?.shell ?? '/bin/bash'
 
-      // 1. Ensure ttyd is available (use wget fallback since curl may not be installed)
-      const check = await sandbox.process.executeCommand('which ttyd')
-      if ((check.exitCode as number) !== 0) {
+      // 1. Ensure ttyd is available
+      const check = await client.exec(data.id, 'which ttyd')
+      if (check.exitCode !== 0) {
         const ttydBase = 'https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd'
-        await sandbox.process.executeCommand(
+        await client.exec(
+          data.id,
           `ARCH=$(uname -m); case "$ARCH" in aarch64|arm64) ARCH=aarch64;; x86_64) ARCH=x86_64;; *) echo "Unsupported arch: $ARCH" >&2; exit 1;; esac; `
           + `TTYD_URL="${ttydBase}.$ARCH"; `
           + `command -v curl > /dev/null && curl -sL "$TTYD_URL" -o /usr/local/bin/ttyd`
           + ` || { command -v wget > /dev/null && wget -qO /usr/local/bin/ttyd "$TTYD_URL"; }`
           + ` || { apt-get update -qq && apt-get install -y -qq wget > /dev/null && wget -qO /usr/local/bin/ttyd "$TTYD_URL"; }`,
         )
-        await sandbox.process.executeCommand('chmod +x /usr/local/bin/ttyd')
+        await client.exec(data.id, 'chmod +x /usr/local/bin/ttyd')
       }
 
-      // 2. Start ttyd in background (-W enables write)
-      await sandbox.process.executeCommand(`nohup ttyd -W -p ${port} '${shell.replace(/'/g, "'\\''")}' > /dev/null 2>&1 &`)
+      // 2. Start ttyd in background
+      await client.exec(data.id, `nohup ttyd -W -p ${port} '${shell.replace(/'/g, "'\\''")}' > /dev/null 2>&1 &`)
 
-      // 3. Wait for ttyd to be ready (check process is running)
-      await sandbox.process.executeCommand(
-        `for i in $(seq 1 20); do pgrep -x ttyd > /dev/null && break || sleep 0.5; done`,
-      )
+      // 3. Wait for ttyd to be ready
+      await client.exec(data.id, `for i in $(seq 1 20); do pgrep -x ttyd > /dev/null && break || sleep 0.5; done`)
 
-      // 4. Get the public URL via preview link
-      const preview = await sandbox.getPreviewLink(port)
-      const previewUrl = preview.url as string
-      const wsUrl = previewUrl.replace(/^https?/, (p) => p === 'https' ? 'wss' : 'ws').replace(/\/$/, '') + '/ws'
+      // 4. Get the public URL
+      const url = await client.getPreviewUrl(data.id, port)
+      const wsUrl = url.replace(/^https?/, (p) => p === 'https' ? 'wss' : 'ws').replace(/\/$/, '') + '/ws'
 
-      return {
-        url: wsUrl,
-        port,
-      }
+      return { url: wsUrl, port }
     },
   }
 }
@@ -164,46 +151,53 @@ export class DaytonaAdapter implements SandboxAdapter {
     this.config = config
   }
 
-  /** Lazy-init Daytona client (cached Promise pattern) */
+  /** Lazy-init client — REST or SDK based on config.mode */
   private getClient(): Promise<DaytonaClient> {
     if (!this.clientPromise) {
-      this.clientPromise = import('@daytonaio/sdk').then(({ Daytona }) =>
-        new Daytona({
-          apiKey: this.config.apiKey,
-          apiUrl: this.config.apiUrl,
-          target: this.config.target as never,
-        }),
-      )
+      const mode = this.config.mode ?? 'sdk'
+      if (mode === 'rest') {
+        this.clientPromise = Promise.resolve(
+          createDaytonaRestClient(this.config.apiKey, this.config.apiUrl),
+        )
+      } else {
+        // SDK mode: lazy dynamic import so @daytonaio/sdk is optional
+        this.clientPromise = import('./sdk-client.js').then(({ createDaytonaSDKClient }) =>
+          createDaytonaSDKClient(
+            this.config.apiKey,
+            this.config.apiUrl,
+            (this.config as DaytonaSDKConfig).target,
+          ),
+        )
+      }
     }
     return this.clientPromise
   }
 
   async createSandbox(config: CreateConfig): Promise<AdapterSandbox> {
-    const daytona = await this.getClient()
+    const client = await this.getClient()
     try {
-      const sandbox = await daytona.create(
-        {
-          image: config.image,
-          envVars: config.env,
-          resources: config.resources
-            ? { cpu: config.resources.cpu, memory: config.resources.memory, disk: config.resources.disk }
-            : undefined,
-          volumes: config.volumes?.map((v: { id: string; mountPath: string }) => ({ volumeId: v.id, mountPath: v.mountPath })),
-          autoDeleteInterval: config.autoDestroyMinutes,
-        },
-        config.timeout ? { timeout: config.timeout } : undefined,
-      )
-      return wrapDaytonaSandbox(sandbox)
+      const data = await client.createSandbox({
+        image: config.image,
+        envVars: config.env,
+        resources: config.resources
+          ? { cpu: config.resources.cpu, memory: config.resources.memory, disk: config.resources.disk }
+          : undefined,
+        volumes: config.volumes?.map((v: { id: string; mountPath: string }) => ({ volumeId: v.id, mountPath: v.mountPath })),
+        autoDeleteInterval: config.autoDestroyMinutes,
+        target: (this.config as DaytonaSDKConfig).target,
+        timeout: config.timeout,
+      })
+      return wrapSandboxData(client, data)
     } catch (err) {
       throw new ProviderError('daytona', err)
     }
   }
 
   async getSandbox(id: string): Promise<AdapterSandbox> {
-    const daytona = await this.getClient()
+    const client = await this.getClient()
     try {
-      const sandbox = await daytona.get(id)
-      return wrapDaytonaSandbox(sandbox)
+      const data = await client.getSandbox(id)
+      return wrapSandboxData(client, data)
     } catch (err) {
       if (isNotFound(err)) throw new SandboxNotFoundError('daytona', id)
       throw new ProviderError('daytona', err, id)
@@ -211,16 +205,15 @@ export class DaytonaAdapter implements SandboxAdapter {
   }
 
   async listSandboxes(filter?: ListFilter): Promise<SandboxInfo[]> {
-    const daytona = await this.getClient()
+    const client = await this.getClient()
     try {
-      const result = await daytona.list(undefined, undefined, filter?.limit)
-      const items = result.items as DaytonaSandbox[]
+      const items = await client.listSandboxes(filter?.limit)
 
       let infos: SandboxInfo[] = items.map((s) => ({
-        id: s.id as string,
-        state: mapState(s.state as string),
-        createdAt: ((s as unknown as Record<string, unknown>)['createdAt'] ?? '') as string,
-        image: ((s as unknown as Record<string, unknown>)['image'] ?? '') as string,
+        id: s.id,
+        state: mapState(s.state),
+        createdAt: s.createdAt,
+        image: s.image,
       }))
 
       // Apply state filter
@@ -236,10 +229,9 @@ export class DaytonaAdapter implements SandboxAdapter {
   }
 
   async destroySandbox(id: string): Promise<void> {
-    const daytona = await this.getClient()
+    const client = await this.getClient()
     try {
-      const sandbox = await daytona.get(id)
-      await daytona.delete(sandbox)
+      await client.deleteSandbox(id)
     } catch (err) {
       // Idempotent: already destroyed or currently being destroyed is fine
       if (isNotFound(err) || isStateTransition(err)) return
@@ -250,21 +242,20 @@ export class DaytonaAdapter implements SandboxAdapter {
   // --- Volume operations ---
 
   async createVolume(config: VolumeConfig): Promise<VolumeInfo> {
-    const daytona = await this.getClient()
+    const client = await this.getClient()
     try {
-      const vol = await daytona.volume.create(config.name)
-      const volId = vol.id as string
+      const vol = await client.createVolume(config.name)
 
       // Wait for volume to become 'ready' (starts as 'pending_create')
       await waitFor(async () => {
-        const volumes = await daytona.volume.list()
-        const current = volumes.find((v: { id: string }) => v.id === volId) as { state?: string } | undefined
+        const volumes = await client.listVolumes()
+        const current = volumes.find(v => v.id === vol.id)
         return current?.state === 'ready'
       })
 
       return {
-        id: volId,
-        name: vol.name as string,
+        id: vol.id,
+        name: vol.name,
         sizeGB: config.sizeGB ?? 1,
         attachedTo: null,
       }
@@ -274,29 +265,24 @@ export class DaytonaAdapter implements SandboxAdapter {
   }
 
   async deleteVolume(id: string): Promise<void> {
-    const daytona = await this.getClient()
+    const client = await this.getClient()
     try {
-      const volumes = await daytona.volume.list()
-      const vol = volumes.find((v: { id: string }) => v.id === id)
+      const volumes = await client.listVolumes()
+      const vol = volumes.find(v => v.id === id)
       if (!vol) return
 
       // Volume may not be in 'ready' state yet — wait up to 30s
-      const volState = (vol as { state?: string }).state
-      if (volState && volState !== 'ready') {
+      if (vol.state && vol.state !== 'ready') {
         for (let i = 0; i < 15; i++) {
           await new Promise(r => setTimeout(r, 2000))
-          const refreshed = await daytona.volume.list()
-          const current = refreshed.find((v: { id: string }) => v.id === id) as { id: string; state?: string } | undefined
+          const refreshed = await client.listVolumes()
+          const current = refreshed.find(v => v.id === id)
           if (!current) return // already gone
           if (current.state === 'ready') break
         }
       }
 
-      // 重新获取最新 volume 对象传给 delete
-      const refreshed = await daytona.volume.list()
-      const latest = refreshed.find((v: { id: string }) => v.id === id)
-      if (!latest) return // 已消失
-      await daytona.volume.delete(latest)
+      await client.deleteVolume(id)
     } catch (err) {
       if (isNotFound(err)) return
       throw new ProviderError('daytona', err)
@@ -304,25 +290,25 @@ export class DaytonaAdapter implements SandboxAdapter {
   }
 
   async listVolumes(): Promise<VolumeInfo[]> {
-    const daytona = await this.getClient()
+    const client = await this.getClient()
     try {
-      const [volumes, sandboxResult] = await Promise.all([
-        daytona.volume.list(),
-        daytona.list(),
+      const [volumes, sandboxes] = await Promise.all([
+        client.listVolumes(),
+        client.listSandboxes(),
       ])
 
       // Reverse lookup: volumeId → sandboxId
       const volumeToSandbox = new Map<string, string>()
-      for (const sandbox of sandboxResult.items as DaytonaSandbox[]) {
-        for (const vol of (sandbox.volumes ?? []) as Array<{ volumeId: string }>) {
-          volumeToSandbox.set(vol.volumeId, sandbox.id as string)
+      for (const sandbox of sandboxes) {
+        for (const vol of sandbox.volumes ?? []) {
+          volumeToSandbox.set(vol.volumeId, sandbox.id)
         }
       }
 
-      return (volumes as Array<{ id: string; name: string }>).map(v => ({
+      return volumes.map(v => ({
         id: v.id,
         name: v.name,
-        sizeGB: 1, // Daytona SDK doesn't expose volume size
+        sizeGB: 1, // Daytona doesn't expose volume size
         attachedTo: volumeToSandbox.get(v.id) ?? null,
       }))
     } catch (err) {
