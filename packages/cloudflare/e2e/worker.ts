@@ -83,15 +83,17 @@ export default {
         const sandbox = getSandbox(env.SANDBOX, body.id)
         const port = 7681
         const shell = body.shell ?? '/bin/bash'
-        const ttydUrl = 'https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64'
+        const ttydBase = 'https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd'
 
         // 1. Ensure ttyd is available (use wget fallback since curl may not be installed)
         const check = await sandbox.exec('which ttyd')
         if ((check.exitCode ?? (check.success ? 0 : 1)) !== 0) {
           await sandbox.exec(
-            `command -v curl > /dev/null && curl -sL ${ttydUrl} -o /usr/local/bin/ttyd`
-            + ` || { command -v wget > /dev/null && wget -qO /usr/local/bin/ttyd ${ttydUrl}; }`
-            + ` || { apt-get update -qq && apt-get install -y -qq wget > /dev/null && wget -qO /usr/local/bin/ttyd ${ttydUrl}; }`,
+            `ARCH=$(uname -m); case "$ARCH" in aarch64|arm64) ARCH=aarch64;; x86_64) ARCH=x86_64;; *) echo "Unsupported arch: $ARCH" >&2; exit 1;; esac; `
+            + `TTYD_URL="${ttydBase}.$ARCH"; `
+            + `command -v curl > /dev/null && curl -sL "$TTYD_URL" -o /usr/local/bin/ttyd`
+            + ` || { command -v wget > /dev/null && wget -qO /usr/local/bin/ttyd "$TTYD_URL"; }`
+            + ` || { apt-get update -qq && apt-get install -y -qq wget > /dev/null && wget -qO /usr/local/bin/ttyd "$TTYD_URL"; }`,
           )
           await sandbox.exec('chmod +x /usr/local/bin/ttyd')
         }

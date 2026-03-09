@@ -131,7 +131,7 @@ function wrapBox(
     async startTerminal(options?: TerminalOptions): Promise<TerminalInfo> {
       const port = 7681
       const shell = options?.shell ?? '/bin/bash'
-      const ttydUrl = 'https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64'
+      const ttydBase = 'https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd'
 
       // 1. Ensure ttyd is available
       const check = await client.exec(box.box_id, { command: 'which', args: ['ttyd'] })
@@ -139,9 +139,11 @@ function wrapBox(
         await client.exec(box.box_id, {
           command: 'bash',
           args: ['-c',
-            `command -v curl > /dev/null && curl -sL ${ttydUrl} -o /usr/local/bin/ttyd`
-            + ` || { command -v wget > /dev/null && wget -qO /usr/local/bin/ttyd ${ttydUrl}; }`
-            + ` || { apt-get update -qq && apt-get install -y -qq wget > /dev/null && wget -qO /usr/local/bin/ttyd ${ttydUrl}; }`,
+            `ARCH=$(uname -m); case "$ARCH" in aarch64|arm64) ARCH=aarch64;; x86_64) ARCH=x86_64;; *) echo "Unsupported arch: $ARCH" >&2; exit 1;; esac; `
+            + `TTYD_URL="${ttydBase}.$ARCH"; `
+            + `command -v curl > /dev/null && curl -sL "$TTYD_URL" -o /usr/local/bin/ttyd`
+            + ` || { command -v wget > /dev/null && wget -qO /usr/local/bin/ttyd "$TTYD_URL"; }`
+            + ` || { apt-get update -qq && apt-get install -y -qq wget > /dev/null && wget -qO /usr/local/bin/ttyd "$TTYD_URL"; }`,
           ],
         })
         await client.exec(box.box_id, {

@@ -97,11 +97,13 @@ function wrapDaytonaSandbox(sandbox: DaytonaSandbox): AdapterSandbox {
       // 1. Ensure ttyd is available (use wget fallback since curl may not be installed)
       const check = await sandbox.process.executeCommand('which ttyd')
       if ((check.exitCode as number) !== 0) {
-        const ttydUrl = 'https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64'
+        const ttydBase = 'https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd'
         await sandbox.process.executeCommand(
-          `command -v curl > /dev/null && curl -sL ${ttydUrl} -o /usr/local/bin/ttyd`
-          + ` || { command -v wget > /dev/null && wget -qO /usr/local/bin/ttyd ${ttydUrl}; }`
-          + ` || { apt-get update -qq && apt-get install -y -qq wget > /dev/null && wget -qO /usr/local/bin/ttyd ${ttydUrl}; }`,
+          `ARCH=$(uname -m); case "$ARCH" in aarch64|arm64) ARCH=aarch64;; x86_64) ARCH=x86_64;; *) echo "Unsupported arch: $ARCH" >&2; exit 1;; esac; `
+          + `TTYD_URL="${ttydBase}.$ARCH"; `
+          + `command -v curl > /dev/null && curl -sL "$TTYD_URL" -o /usr/local/bin/ttyd`
+          + ` || { command -v wget > /dev/null && wget -qO /usr/local/bin/ttyd "$TTYD_URL"; }`
+          + ` || { apt-get update -qq && apt-get install -y -qq wget > /dev/null && wget -qO /usr/local/bin/ttyd "$TTYD_URL"; }`,
         )
         await sandbox.process.executeCommand('chmod +x /usr/local/bin/ttyd')
       }
