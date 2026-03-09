@@ -1,6 +1,6 @@
 {
   "name": "@sandbank.dev/daytona",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Daytona cloud sandbox adapter for Sandbank",
   "license": "MIT",
   "type": "module",

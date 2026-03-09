@@ -1,6 +1,6 @@
 {
   "name": "@sandbank.dev/db9",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "db9.ai service adapter for Sandbank — serverless PostgreSQL for AI agents",
   "license": "MIT",
   "type": "module",
