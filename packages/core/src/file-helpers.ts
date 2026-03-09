@@ -105,6 +105,9 @@ export async function uploadArchiveViaExec(
     throw new Error(`uploadArchive: write failed: ${writeResult.stderr}`)
   }
 
+  // 确保目标目录存在
+  await sandbox.exec(`mkdir -p ${shellEscape(target)}`)
+
   // 解压
   const extractResult = await sandbox.exec(`tar xzf ${tmp} -C ${shellEscape(target)}`)
   if (extractResult.exitCode !== 0) {
