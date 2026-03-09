@@ -23,6 +23,13 @@ export type {
   VolumeProvider,
   VolumeConfig,
   VolumeInfo,
+  // Service
+  ServiceType,
+  ServiceConfig,
+  ServiceCredentials,
+  ServiceInfo,
+  ServiceProvider,
+  ServiceBinding,
   // Adapter
   SandboxAdapter,
   AdapterSandbox,
@@ -42,6 +49,7 @@ export {
   withPortExpose,
   withSnapshot,
   withVolumes,
+  withServices,
 } from './capabilities.js'
 
 // Errors

@@ -9,6 +9,9 @@ import type {
   SandboxAdapter,
   SandboxInfo,
   SandboxProvider,
+  ServiceConfig,
+  ServiceInfo,
+  ServiceProvider,
   TerminalInfo,
   TerminalOptions,
   VolumeConfig,
@@ -84,16 +87,6 @@ function wrapSandbox(raw: AdapterSandbox, providerName: string): Sandbox {
   return sandbox
 }
 
-/** 能力到 AdapterSandbox 方法的映射 */
-const CAPABILITY_METHOD_MAP: Record<Capability, string> = {
-  'exec.stream': 'execStream',
-  'terminal': 'startTerminal',
-  'sleep': 'sleep',
-  'volumes': '',       // checked at adapter level, not sandbox level
-  'snapshot': 'createSnapshot',
-  'port.expose': 'exposePort',
-}
-
 /**
  * 交叉验证 adapter 声明的能力。
  *
@@ -109,6 +102,11 @@ function detectCapabilities(adapter: SandboxAdapter): ReadonlySet<Capability> {
     if (cap === 'volumes') {
       // volumes 是 provider 级别能力，可以直接验证
       if (adapter.createVolume && adapter.deleteVolume && adapter.listVolumes) {
+        validated.add(cap)
+      }
+    } else if (cap === 'services') {
+      // services 是 provider 级别能力，可以直接验证
+      if (adapter.createService && adapter.getService && adapter.listServices && adapter.destroyService) {
         validated.add(cap)
       }
     } else {
@@ -129,6 +127,26 @@ export function createProvider(adapter: SandboxAdapter): SandboxProvider {
     get capabilities() { return capabilities },
 
     async create(config: CreateConfig): Promise<Sandbox> {
+      // 如果绑定了 services，解析凭证注入 env
+      if (config.services?.length) {
+        if (!capabilities.has('services') || !adapter.getService) {
+          throw new CapabilityNotSupportedError(adapter.name, 'services')
+        }
+        const getService = adapter.getService.bind(adapter)
+        const mergedEnv = { ...config.env }
+        for (const binding of config.services) {
+          const svc = await getService(binding.id)
+          if (svc.state !== 'ready') {
+            throw new ProviderError(adapter.name, new Error(`Service ${binding.id} is not ready (state: ${svc.state})`))
+          }
+          for (const [key, value] of Object.entries(svc.credentials.env)) {
+            const envKey = binding.envPrefix ? `${binding.envPrefix}_${key}` : key
+            mergedEnv[envKey] = value
+          }
+        }
+        config = { ...config, env: mergedEnv }
+      }
+
       const raw = await adapter.createSandbox(config)
       const sandbox = wrapSandbox(raw, adapter.name)
 
@@ -158,18 +176,21 @@ export function createProvider(adapter: SandboxAdapter): SandboxProvider {
     },
   }
 
-  // 如果 adapter 支持 volume 操作，扩展为 VolumeProvider
+  // 累积式挂载可选能力方法（volumes 和 services 可以共存）
+  const extended = provider as SandboxProvider & Record<string, unknown>
+
   if (capabilities.has('volumes') && adapter.createVolume && adapter.deleteVolume && adapter.listVolumes) {
-    const volumeProvider = provider as SandboxProvider & {
-      createVolume: (config: VolumeConfig) => Promise<VolumeInfo>
-      deleteVolume: (id: string) => Promise<void>
-      listVolumes: () => Promise<VolumeInfo[]>
-    }
-    volumeProvider.createVolume = (config: VolumeConfig) => adapter.createVolume!(config)
-    volumeProvider.deleteVolume = (id: string) => adapter.deleteVolume!(id)
-    volumeProvider.listVolumes = () => adapter.listVolumes!()
-    return volumeProvider as VolumeProvider
+    extended.createVolume = (config: VolumeConfig) => adapter.createVolume!(config)
+    extended.deleteVolume = (id: string) => adapter.deleteVolume!(id)
+    extended.listVolumes = () => adapter.listVolumes!()
   }
 
-  return provider
+  if (capabilities.has('services') && adapter.createService && adapter.getService && adapter.listServices && adapter.destroyService) {
+    extended.createService = (config: ServiceConfig) => adapter.createService!(config)
+    extended.getService = (id: string) => adapter.getService!(id)
+    extended.listServices = () => adapter.listServices!()
+    extended.destroyService = (id: string) => adapter.destroyService!(id)
+  }
+
+  return extended as SandboxProvider
 }

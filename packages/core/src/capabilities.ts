@@ -3,6 +3,7 @@ import type {
   PortExposeSandbox,
   Sandbox,
   SandboxProvider,
+  ServiceProvider,
   SleepableSandbox,
   SnapshotSandbox,
   StreamableSandbox,
@@ -60,8 +61,25 @@ export function withSnapshot(sandbox: Sandbox): SnapshotSandbox | null {
 
 /** 向下转型为支持卷管理的 Provider，不支持则返回 null */
 export function withVolumes(provider: SandboxProvider): VolumeProvider | null {
-  if ('createVolume' in provider && typeof provider.createVolume === 'function') {
+  if (
+    'createVolume' in provider && typeof provider.createVolume === 'function' &&
+    'deleteVolume' in provider && typeof provider.deleteVolume === 'function' &&
+    'listVolumes' in provider && typeof provider.listVolumes === 'function'
+  ) {
     return provider as VolumeProvider
+  }
+  return null
+}
+
+/** 向下转型为支持服务管理的 Provider，不支持则返回 null */
+export function withServices(provider: SandboxProvider): ServiceProvider | null {
+  if (
+    'createService' in provider && typeof provider.createService === 'function' &&
+    'getService' in provider && typeof provider.getService === 'function' &&
+    'listServices' in provider && typeof provider.listServices === 'function' &&
+    'destroyService' in provider && typeof provider.destroyService === 'function'
+  ) {
+    return provider as ServiceProvider
   }
   return null
 }

@@ -61,6 +61,9 @@ export interface CreateConfig {
    * 每个 skill 会被写入沙箱的 `~/.claude/skills/` 目录。
    */
   skills?: SkillDefinition[]
+
+  /** 绑定的服务。凭证自动注入为环境变量（需 provider 支持 'services' 能力） */
+  services?: ServiceBinding[]
 }
 
 export interface ListFilter {
@@ -128,6 +131,7 @@ export type Capability =
   | 'volumes'
   | 'snapshot'
   | 'port.expose'
+  | 'services'
 
 // --- Capability Interfaces ---
 
@@ -201,6 +205,49 @@ export interface VolumeInfo {
   attachedTo: string | null
 }
 
+// --- Service（数据服务层） ---
+
+export type ServiceType = 'postgres'
+
+export interface ServiceConfig {
+  /** 服务类型 */
+  type: ServiceType
+  /** 服务名称 */
+  name: string
+  /** 区域偏好（provider 可忽略） */
+  region?: string
+}
+
+export interface ServiceCredentials {
+  /** 主连接 URL（如 postgres://...） */
+  url: string
+  /** 注入到 sandbox 的环境变量映射 */
+  env: Record<string, string>
+}
+
+export interface ServiceInfo {
+  id: string
+  type: ServiceType
+  name: string
+  state: 'creating' | 'ready' | 'error' | 'terminated'
+  credentials: ServiceCredentials
+}
+
+export interface ServiceProvider extends SandboxProvider {
+  createService(config: ServiceConfig): Promise<ServiceInfo>
+  getService(id: string): Promise<ServiceInfo>
+  listServices(): Promise<ServiceInfo[]>
+  destroyService(id: string): Promise<void>
+}
+
+export interface ServiceBinding {
+  /** Service ID */
+  id: string
+  /** 环境变量前缀。默认无前缀（直接用 DATABASE_URL 等）。
+   *  设为 'BRAIN' 则注入 BRAIN_DATABASE_URL 等 */
+  envPrefix?: string
+}
+
 // --- Adapter（provider 作者实现的对接层） ---
 
 export interface SandboxAdapter {
@@ -216,6 +263,12 @@ export interface SandboxAdapter {
   createVolume?(config: VolumeConfig): Promise<VolumeInfo>
   deleteVolume?(id: string): Promise<void>
   listVolumes?(): Promise<VolumeInfo[]>
+
+  // Service 操作（可选）
+  createService?(config: ServiceConfig): Promise<ServiceInfo>
+  getService?(id: string): Promise<ServiceInfo>
+  listServices?(): Promise<ServiceInfo[]>
+  destroyService?(id: string): Promise<void>
 }
 
 export interface AdapterSandbox {
