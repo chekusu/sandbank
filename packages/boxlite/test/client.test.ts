@@ -207,7 +207,7 @@ describe('BoxLiteClient', () => {
 
       // Verify polling endpoint
       const [pollUrl] = mockFetch.mock.calls[1]!
-      expect(pollUrl).toBe('http://localhost:8080/v1/default/boxes/box_abc/executions/exec_abc')
+      expect(pollUrl).toBe('http://localhost:8080/v1/default/boxes/box_abc/exec/exec_abc')
     })
 
     it('should handle non-zero exit code', async () => {

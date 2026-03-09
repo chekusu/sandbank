@@ -23,12 +23,13 @@ describe('uploadArchiveViaExec', () => {
 
     await uploadArchiveViaExec(sandbox, data)
 
-    // Should have 3 calls: write, extract, cleanup
-    expect(calls).toHaveLength(3)
+    // Should have 4 calls: write, mkdir, extract, cleanup
+    expect(calls).toHaveLength(4)
     expect(calls[0]).toContain('base64 -d')
     expect(calls[0]).toMatch(/\/tmp\/_sb_archive_\d+_\w+\.tar\.gz/)
-    expect(calls[1]).toMatch(/tar xzf \/tmp\/_sb_archive_\d+_\w+\.tar\.gz -C '\/'/)
-    expect(calls[2]).toMatch(/rm -f \/tmp\/_sb_archive_\d+_\w+\.tar\.gz/)
+    expect(calls[1]).toBe("mkdir -p '/'")
+    expect(calls[2]).toMatch(/tar xzf \/tmp\/_sb_archive_\d+_\w+\.tar\.gz -C '\/'/)
+    expect(calls[3]).toMatch(/rm -f \/tmp\/_sb_archive_\d+_\w+\.tar\.gz/)
   })
 
   it('uses custom destDir when provided', async () => {
@@ -41,7 +42,8 @@ describe('uploadArchiveViaExec', () => {
 
     await uploadArchiveViaExec(sandbox, new Uint8Array([1, 2, 3]), '/workspace')
 
-    expect(calls[1]).toMatch(/tar xzf \/tmp\/_sb_archive_\d+_\w+\.tar\.gz -C '\/workspace'/)
+    expect(calls[1]).toBe("mkdir -p '/workspace'")
+    expect(calls[2]).toMatch(/tar xzf \/tmp\/_sb_archive_\d+_\w+\.tar\.gz -C '\/workspace'/)
   })
 
   it('handles ReadableStream input', async () => {
@@ -64,17 +66,18 @@ describe('uploadArchiveViaExec', () => {
 
     await uploadArchiveViaExec(sandbox, stream)
 
-    // Verify base64 contains all bytes (1,2,3,4,5,6)
+    // Verify base64 contains all bytes (1,2,3,4,5,6) — call[0] is the write
     const expected = btoa(String.fromCharCode(1, 2, 3, 4, 5, 6))
     expect(calls[0]).toContain(expected)
+    expect(calls[1]).toBe("mkdir -p '/'")
   })
 
   it('throws and cleans up on extract failure', async () => {
     let callCount = 0
     const exec = vi.fn(async () => {
       callCount++
-      if (callCount === 2) {
-        // extract fails
+      if (callCount === 3) {
+        // extract fails (call 1=write, 2=mkdir, 3=extract)
         return { exitCode: 1, stdout: '', stderr: 'tar: error' }
       }
       return { exitCode: 0, stdout: '', stderr: '' }
@@ -82,8 +85,8 @@ describe('uploadArchiveViaExec', () => {
     const sandbox = mockSandbox(exec)
 
     await expect(uploadArchiveViaExec(sandbox, new Uint8Array([1]))).rejects.toThrow('extract failed')
-    // cleanup call should have happened (write + extract fail + cleanup = 3)
-    expect(exec).toHaveBeenCalledTimes(3)
+    // cleanup call should have happened (write + mkdir + extract fail + cleanup = 4)
+    expect(exec).toHaveBeenCalledTimes(4)
   })
 
   it('throws on write failure', async () => {
