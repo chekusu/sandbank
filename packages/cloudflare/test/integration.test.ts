@@ -522,8 +522,8 @@ describe('CloudflareAdapter integration', () => {
       expect(portExpose).not.toBeNull()
       if (!portExpose) return
 
-      const result = await portExpose.exposePort(3000)
-      expect(result.url).toBe('https://integration.example.com:3000')
+      const result = await portExpose.exposePort(3001)
+      expect(result.url).toBe('https://integration.example.com:3001')
       expect(typeof result.url).toBe('string')
     })
 
@@ -532,10 +532,10 @@ describe('CloudflareAdapter integration', () => {
       const portExpose = withPortExpose(sandbox)
       if (!portExpose) return
 
-      const result1 = await portExpose.exposePort(3000)
+      const result1 = await portExpose.exposePort(3001)
       const result2 = await portExpose.exposePort(8080)
 
-      expect(result1.url).toBe('https://integration.example.com:3000')
+      expect(result1.url).toBe('https://integration.example.com:3001')
       expect(result2.url).toBe('https://integration.example.com:8080')
       expect(currentSandbox.exposePort).toHaveBeenCalledTimes(2)
     })
