@@ -79,16 +79,16 @@ All providers implement these — the minimum contract:
 
 Capabilities are opt-in. Use `withVolumes(provider)`, `withPortExpose(sandbox)`, etc. to safely check and access them at runtime.
 
-| Capability | Daytona | Fly.io | Cloudflare | BoxLite | Description |
-|------------|:-------:|:------:|:----------:|:-------:|-------------|
-| `volumes` | ✅ | ✅ | ⚠️* | ❌ | Persistent volume management |
-| `port.expose` | ✅ | ✅ | ⚠️** | ✅ | Expose sandbox ports to the internet |
-| `exec.stream` | ❌ | ❌ | ✅ | ✅ | Stream stdout/stderr in real-time |
-| `snapshot` | ❌ | ❌ | ✅ | ✅ | Snapshot and restore sandbox state |
-| `terminal` | ✅ | ✅ | ✅ | ✅ | Interactive web terminal (ttyd) |
-| `sleep` | ❌ | ❌ | ❌ | ✅ | Hibernate and wake sandboxes |
-| `skills` | ✅ | ✅ | ✅ | ✅ | Load and inject skill definitions into sandboxes |
-| `services` | ❌ | ❌ | ❌ | ❌ | Bind data services (e.g. db9 PostgreSQL) to sandboxes |
+| Capability | Daytona | Fly.io | Cloudflare | BoxLite | db9 | Description |
+|------------|:-------:|:------:|:----------:|:-------:|:---:|-------------|
+| `volumes` | ✅ | ✅ | ⚠️* | ❌ | — | Persistent volume management |
+| `port.expose` | ✅ | ✅ | ⚠️** | ✅ | — | Expose sandbox ports to the internet |
+| `exec.stream` | ❌ | ❌ | ✅ | ✅ | — | Stream stdout/stderr in real-time |
+| `snapshot` | ❌ | ❌ | ✅ | ✅ | — | Snapshot and restore sandbox state |
+| `terminal` | ✅ | ✅ | ✅ | ✅ | — | Interactive web terminal (ttyd) |
+| `sleep` | ❌ | ❌ | ❌ | ✅ | — | Hibernate and wake sandboxes |
+| `skills` | ✅ | ✅ | ✅ | ✅ | — | Load and inject skill definitions into sandboxes |
+| `services` | ❌ | ❌ | ❌ | ❌ | ✅ | Bind data services (PostgreSQL) to sandboxes |
 
 \* Cloudflare `volumes` requires `storage` option in adapter config.
 
