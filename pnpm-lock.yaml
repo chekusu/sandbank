@@ -91,13 +91,13 @@ importers:
 
   packages/daytona:
     dependencies:
-      '@daytonaio/sdk':
-        specifier: ^0.144.0
-        version: 0.144.0(ws@8.19.0)
       '@sandbank.dev/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
+      '@daytonaio/sdk':
+        specifier: ^0.144.0
+        version: 0.144.0(ws@8.19.0)
       '@types/node':
         specifier: ^25.3.0
         version: 25.3.0
