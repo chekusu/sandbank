@@ -140,7 +140,7 @@ export function createBoxLiteRestClient(config: BoxLiteRemoteConfig): BoxLiteCli
         pollInterval = Math.min(pollInterval * 2, 2000)
 
         const result = await request<BoxLiteExecution>(
-          `/boxes/${boxId}/executions/${execution.id}`,
+          `/boxes/${boxId}/exec/${execution.id}`,
         )
 
         if (result.exit_code !== null && result.exit_code !== undefined) {
@@ -186,7 +186,7 @@ export function createBoxLiteRestClient(config: BoxLiteRemoteConfig): BoxLiteCli
 
             try {
               const result = await self.request<BoxLiteExecution>(
-                `/boxes/${boxId}/executions/${execution.id}`,
+                `/boxes/${boxId}/exec/${execution.id}`,
               )
 
               if (result.exit_code !== null && result.exit_code !== undefined) {
