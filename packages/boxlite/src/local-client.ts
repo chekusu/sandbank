@@ -71,7 +71,10 @@ class Bridge:
         kwargs = {"image": image}
         for k in ("cpu", "memory_mb", "disk_size_gb", "env", "working_dir"):
             if params.get(k) is not None:
-                kwargs[k] = params[k]
+                if k == "env" and isinstance(params[k], dict):
+                    kwargs[k] = list(params[k].items())
+                else:
+                    kwargs[k] = params[k]
 
         now = datetime.now(timezone.utc).isoformat()
 
