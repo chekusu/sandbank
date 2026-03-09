@@ -12,8 +12,9 @@ import type {
   TerminalOptions,
 } from '@sandbank.dev/core'
 import { SandboxNotFoundError, ProviderError } from '@sandbank.dev/core'
-import { createBoxLiteClient, type BoxLiteClient } from './client.js'
-import type { BoxLiteAdapterConfig, BoxLiteBox } from './types.js'
+import { createBoxLiteRestClient } from './client.js'
+import { createBoxLiteLocalClient } from './local-client.js'
+import type { BoxLiteAdapterConfig, BoxLiteBox, BoxLiteClient } from './types.js'
 
 /** Map BoxLite box status to Sandbank SandboxState */
 function mapState(status: string): SandboxState {
@@ -31,13 +32,13 @@ function mapState(status: string): SandboxState {
   }
 }
 
-/** Extract host from API URL for port exposure */
-function getApiHost(apiUrl: string): string {
+/** Resolve the host used for port exposure and terminal URLs */
+function resolveHost(config: BoxLiteAdapterConfig): string {
+  if (config.mode === 'local') return '127.0.0.1'
   try {
-    const url = new URL(apiUrl)
-    return url.hostname
+    return new URL(config.apiUrl).hostname
   } catch {
-    return apiUrl
+    return config.apiUrl
   }
 }
 
@@ -45,18 +46,17 @@ function getApiHost(apiUrl: string): string {
 function wrapBox(
   box: BoxLiteBox,
   client: BoxLiteClient,
-  config: BoxLiteAdapterConfig,
+  host: string,
   portMappings: Map<number, number>,
 ): AdapterSandbox {
   return {
-    get id() { return box.box_id },
+    get id() { return box.id },
     get state() { return mapState(box.status) },
     get createdAt() { return box.created_at },
 
     async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
-      const result = await client.exec(box.box_id, {
-        command: 'bash',
-        args: ['-c', command],
+      const result = await client.exec(box.id, {
+        cmd: ['bash', '-c', command],
         working_dir: options?.cwd,
         timeout_seconds: options?.timeout ? Math.ceil(options.timeout / 1000) : undefined,
       })
@@ -68,9 +68,8 @@ function wrapBox(
     },
 
     async execStream(command: string, options?: ExecOptions): Promise<ReadableStream<Uint8Array>> {
-      return client.execStream(box.box_id, {
-        command: 'bash',
-        args: ['-c', command],
+      return client.execStream(box.id, {
+        cmd: ['bash', '-c', command],
         working_dir: options?.cwd,
         timeout_seconds: options?.timeout ? Math.ceil(options.timeout / 1000) : undefined,
       })
@@ -81,7 +80,6 @@ function wrapBox(
       if (archive instanceof Uint8Array) {
         data = archive
       } else {
-        // Collect ReadableStream into Uint8Array
         const reader = archive.getReader()
         const chunks: Uint8Array[] = []
         while (true) {
@@ -97,34 +95,33 @@ function wrapBox(
           offset += chunk.length
         }
       }
-      await client.uploadFiles(box.box_id, destDir ?? '/', data)
+      await client.uploadFiles(box.id, destDir ?? '/', data)
     },
 
     async downloadArchive(srcDir?: string): Promise<ReadableStream> {
-      return client.downloadFiles(box.box_id, srcDir ?? '/')
+      return client.downloadFiles(box.id, srcDir ?? '/')
     },
 
     async sleep(): Promise<void> {
-      await client.stopBox(box.box_id)
+      await client.stopBox(box.id)
     },
 
     async wake(): Promise<void> {
-      await client.startBox(box.box_id)
+      await client.startBox(box.id)
     },
 
     async createSnapshot(name?: string): Promise<{ snapshotId: string }> {
       const snapshotName = name ?? `snap-${Date.now()}`
-      await client.createSnapshot(box.box_id, snapshotName)
+      await client.createSnapshot(box.id, snapshotName)
       return { snapshotId: snapshotName }
     },
 
     async restoreSnapshot(snapshotId: string): Promise<void> {
-      await client.restoreSnapshot(box.box_id, snapshotId)
+      await client.restoreSnapshot(box.id, snapshotId)
     },
 
     async exposePort(port: number): Promise<{ url: string }> {
       const hostPort = portMappings.get(port) ?? port
-      const host = getApiHost(config.apiUrl)
       return { url: `http://${host}:${hostPort}` }
     },
 
@@ -133,12 +130,10 @@ function wrapBox(
       const shell = options?.shell ?? '/bin/bash'
       const ttydBase = 'https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd'
 
-      // 1. Ensure ttyd is available
-      const check = await client.exec(box.box_id, { command: 'which', args: ['ttyd'] })
+      const check = await client.exec(box.id, { cmd: ['which', 'ttyd'] })
       if (check.exitCode !== 0) {
-        await client.exec(box.box_id, {
-          command: 'bash',
-          args: ['-c',
+        await client.exec(box.id, {
+          cmd: ['bash', '-c',
             `ARCH=$(uname -m); case "$ARCH" in aarch64|arm64) ARCH=aarch64;; x86_64) ARCH=x86_64;; *) echo "Unsupported arch: $ARCH" >&2; exit 1;; esac; `
             + `TTYD_URL="${ttydBase}.$ARCH"; `
             + `command -v curl > /dev/null && curl -sL "$TTYD_URL" -o /usr/local/bin/ttyd`
@@ -146,26 +141,20 @@ function wrapBox(
             + ` || { apt-get update -qq && apt-get install -y -qq wget > /dev/null && wget -qO /usr/local/bin/ttyd "$TTYD_URL"; }`,
           ],
         })
-        await client.exec(box.box_id, {
-          command: 'chmod',
-          args: ['+x', '/usr/local/bin/ttyd'],
+        await client.exec(box.id, {
+          cmd: ['chmod', '+x', '/usr/local/bin/ttyd'],
         })
       }
 
-      // 2. Start ttyd in background (-W enables write)
-      await client.exec(box.box_id, {
-        command: 'bash',
-        args: ['-c', `nohup ttyd -W -p ${port} '${shell.replace(/'/g, "'\\''")}' > /dev/null 2>&1 &`],
+      await client.exec(box.id, {
+        cmd: ['bash', '-c', `nohup ttyd -W -p ${port} '${shell.replace(/'/g, "'\\''")}' > /dev/null 2>&1 &`],
       })
 
-      // 3. Wait for ttyd to be ready
-      await client.exec(box.box_id, {
-        command: 'bash',
-        args: ['-c', `for i in $(seq 1 20); do pgrep -x ttyd > /dev/null && break || sleep 0.5; done`],
+      await client.exec(box.id, {
+        cmd: ['bash', '-c', `for i in $(seq 1 20); do pgrep -x ttyd > /dev/null && break || sleep 0.5; done`],
       })
 
       const hostPort = portMappings.get(port) ?? port
-      const host = getApiHost(config.apiUrl)
 
       return {
         url: `ws://${host}:${hostPort}/ws`,
@@ -181,62 +170,69 @@ function isNotFound(err: unknown): boolean {
   return msg.includes('404') || msg.includes('not found') || msg.includes('Not Found')
 }
 
+/** Create the appropriate client based on config mode */
+function createClient(config: BoxLiteAdapterConfig): BoxLiteClient {
+  if (config.mode === 'local') {
+    return createBoxLiteLocalClient(config)
+  }
+  return createBoxLiteRestClient(config)
+}
+
 export class BoxLiteAdapter implements SandboxAdapter {
   readonly name = 'boxlite'
-  readonly capabilities: ReadonlySet<Capability> = new Set<Capability>([
-    'exec.stream',
-    'terminal',
-    'sleep',
-    'snapshot',
-    'port.expose',
-  ])
+  readonly capabilities: ReadonlySet<Capability>
 
   private readonly client: BoxLiteClient
   private readonly config: BoxLiteAdapterConfig
-  /** Track port mappings per box: boxId → Map<guestPort, hostPort> */
+  private readonly host: string
   private readonly portMaps = new Map<string, Map<number, number>>()
 
   constructor(config: BoxLiteAdapterConfig) {
     this.config = config
-    this.client = createBoxLiteClient(config)
+    this.host = resolveHost(config)
+    this.client = createClient(config)
+
+    // Local mode: snapshots not supported yet
+    const caps: Capability[] = ['exec.stream', 'terminal', 'sleep', 'port.expose']
+    if (config.mode !== 'local') {
+      caps.push('snapshot')
+    }
+    this.capabilities = new Set(caps)
   }
 
   async createSandbox(config: CreateConfig): Promise<AdapterSandbox> {
     try {
       const box = await this.client.createBox({
         image: config.image,
-        cpus: config.resources?.cpu,
-        memory_mib: config.resources?.memory,
+        cpu: config.resources?.cpu,
+        memory_mb: config.resources?.memory,
         env: config.env,
         auto_remove: false,
       })
 
-      // Store port mappings if they were specified at creation
       const portMap = new Map<number, number>()
-      this.portMaps.set(box.box_id, portMap)
+      this.portMaps.set(box.id, portMap)
 
-      // Start the box if it was created in configured state
       if (box.status === 'configured' || box.status === 'stopped') {
-        await this.client.startBox(box.box_id)
+        await this.client.startBox(box.id)
       }
 
-      // Wait for box to be running (timeout is in seconds per CreateConfig docs)
       const timeoutSec = config.timeout ?? 30
       const maxAttempts = Math.max(1, timeoutSec)
       let current = box
       for (let i = 0; i < maxAttempts; i++) {
-        current = await this.client.getBox(box.box_id)
+        current = await this.client.getBox(box.id)
         if (current.status === 'running') break
         await new Promise(r => setTimeout(r, 1000))
       }
 
       if (current.status !== 'running') {
-        await this.client.deleteBox(box.box_id, true).catch(() => {})
-        this.portMaps.delete(box.box_id)
+        await this.client.deleteBox(box.id, true).catch(() => {})
+        this.portMaps.delete(box.id)
         throw new ProviderError('boxlite', new Error(`Sandbox failed to start within ${timeoutSec}s (status: ${current.status})`))
       }
 
-      return wrapBox(current, this.client, this.config, portMap)
+      return wrapBox(current, this.client, this.host, portMap)
     } catch (err) {
       if (err instanceof ProviderError) throw err
       throw new ProviderError('boxlite', err)
@@ -247,7 +243,7 @@ export class BoxLiteAdapter implements SandboxAdapter {
     try {
       const box = await this.client.getBox(id)
       const portMap = this.portMaps.get(id) ?? new Map()
-      return wrapBox(box, this.client, this.config, portMap)
+      return wrapBox(box, this.client, this.host, portMap)
     } catch (err) {
       if (isNotFound(err)) throw new SandboxNotFoundError('boxlite', id)
       throw new ProviderError('boxlite', err, id)
@@ -259,7 +255,7 @@ export class BoxLiteAdapter implements SandboxAdapter {
       const boxes = await this.client.listBoxes()
 
       let infos: SandboxInfo[] = boxes.map((b) => ({
-        id: b.box_id,
+        id: b.id,
         state: mapState(b.status),
         createdAt: b.created_at,
         image: b.image,
@@ -288,5 +284,10 @@ export class BoxLiteAdapter implements SandboxAdapter {
       if (isNotFound(err)) return
       throw new ProviderError('boxlite', err, id)
     }
+  }
+
+  /** Dispose the adapter and clean up resources (e.g. Python bridge process) */
+  async dispose(): Promise<void> {
+    await this.client.dispose?.()
   }
 }

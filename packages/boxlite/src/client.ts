@@ -1,14 +1,19 @@
 import type {
-  BoxLiteAdapterConfig,
   BoxLiteBox,
+  BoxLiteClient,
   BoxLiteCreateParams,
   BoxLiteExecRequest,
   BoxLiteExecution,
+  BoxLiteRemoteConfig,
   BoxLiteSnapshot,
   BoxLiteTokenResponse,
 } from './types.js'
 
-export function createBoxLiteClient(config: BoxLiteAdapterConfig) {
+/**
+ * Create a BoxLite REST client for communicating with a BoxRun REST API.
+ * Used in remote mode.
+ */
+export function createBoxLiteRestClient(config: BoxLiteRemoteConfig): BoxLiteClient {
   const { apiUrl } = config
   const prefix = config.prefix ?? ''
   const baseUrl = apiUrl.replace(/\/$/, '') + '/v1'
@@ -18,13 +23,8 @@ export function createBoxLiteClient(config: BoxLiteAdapterConfig) {
   let tokenExpiresAt = 0
 
   async function ensureToken(): Promise<string> {
-    // If a static token was provided, always use it
     if (config.apiToken) return config.apiToken
-
-    // No auth configured — run without authentication
     if (!config.clientId || !config.clientSecret) return ''
-
-    // If we have a valid cached token, use it
     if (token && Date.now() < tokenExpiresAt) return token
 
     const response = await fetch(`${baseUrl}/oauth/tokens`, {
@@ -44,7 +44,6 @@ export function createBoxLiteClient(config: BoxLiteAdapterConfig) {
 
     const data = await response.json() as BoxLiteTokenResponse
     token = data.access_token
-    // Refresh 60s before expiry
     tokenExpiresAt = Date.now() + (data.expires_in - 60) * 1000
     return token
   }
@@ -79,57 +78,7 @@ export function createBoxLiteClient(config: BoxLiteAdapterConfig) {
     return JSON.parse(text) as T
   }
 
-  /**
-   * Parse SSE data field — may be JSON `{"data":"<base64>"}` or raw base64.
-   */
-  function decodeSSEData(raw: string): string {
-    try {
-      const parsed = JSON.parse(raw) as { data: string }
-      if (parsed.data) return atob(parsed.data)
-    } catch {
-      // Fall through to raw base64
-    }
-    return atob(raw)
-  }
-
-  /**
-   * Consume an SSE stream from BoxLite exec output.
-   * SSE events: stdout/stderr data is base64-encoded, exit event has exit_code.
-   */
-  function parseSSE(text: string): { stdout: string; stderr: string; exitCode: number } {
-    let stdout = ''
-    let stderr = ''
-    let exitCode = 0
-
-    const lines = text.split('\n')
-    let currentEvent = ''
-
-    for (const line of lines) {
-      if (line.startsWith('event:')) {
-        currentEvent = line.slice(6).trim()
-      } else if (line.startsWith('data:')) {
-        const data = line.slice(5).trim()
-        if (currentEvent === 'stdout') {
-          stdout += decodeSSEData(data)
-        } else if (currentEvent === 'stderr') {
-          stderr += decodeSSEData(data)
-        } else if (currentEvent === 'exit') {
-          try {
-            const parsed = JSON.parse(data) as { exit_code: number }
-            exitCode = parsed.exit_code
-          } catch {
-            exitCode = parseInt(data, 10) || 0
-          }
-        }
-      }
-    }
-
-    return { stdout, stderr, exitCode }
-  }
-
   return {
-    // --- Box lifecycle ---
-
     async createBox(params: BoxLiteCreateParams): Promise<BoxLiteBox> {
       return request<BoxLiteBox>('/boxes', {
         method: 'POST',
@@ -146,8 +95,9 @@ export function createBoxLiteClient(config: BoxLiteAdapterConfig) {
       if (status) params.set('status', status)
       if (pageSize) params.set('page_size', String(pageSize))
       const qs = params.toString()
-      const data = await request<{ boxes: BoxLiteBox[] }>(`/boxes${qs ? `?${qs}` : ''}`)
-      return data.boxes ?? []
+      const data = await request<BoxLiteBox[] | { boxes?: BoxLiteBox[] }>(`/boxes${qs ? `?${qs}` : ''}`)
+      if (Array.isArray(data)) return data
+      return (data as { boxes?: BoxLiteBox[] }).boxes ?? []
     },
 
     async deleteBox(boxId: string, force = false): Promise<void> {
@@ -164,107 +114,97 @@ export function createBoxLiteClient(config: BoxLiteAdapterConfig) {
       await request(`/boxes/${boxId}/stop`, { method: 'POST' })
     },
 
-    // --- Exec ---
-
     async exec(
       boxId: string,
       req: BoxLiteExecRequest,
     ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-      // 1. POST /exec to start execution
       const execution = await request<BoxLiteExecution>(`/boxes/${boxId}/exec`, {
         method: 'POST',
         body: JSON.stringify(req),
       })
 
-      // 2. GET /executions/{id}/output — SSE stream
-      const response = await request(
-        `/boxes/${boxId}/executions/${execution.execution_id}/output`,
-        { headers: { 'Accept': 'text/event-stream' } },
-        true,
-      )
-
-      if (!response.ok) {
-        const body = await response.text()
-        throw new Error(`BoxLite API error ${response.status}: ${body}`)
+      if (execution.exit_code !== null && execution.exit_code !== undefined) {
+        return {
+          stdout: execution.stdout ?? '',
+          stderr: execution.stderr ?? '',
+          exitCode: execution.exit_code,
+        }
       }
 
-      const sseText = await response.text()
-      return parseSSE(sseText)
+      const timeoutMs = (req.timeout_seconds ?? 300) * 1000
+      const startTime = Date.now()
+      let pollInterval = 100
+
+      while (Date.now() - startTime < timeoutMs) {
+        await new Promise(r => setTimeout(r, pollInterval))
+        pollInterval = Math.min(pollInterval * 2, 2000)
+
+        const result = await request<BoxLiteExecution>(
+          `/boxes/${boxId}/executions/${execution.id}`,
+        )
+
+        if (result.exit_code !== null && result.exit_code !== undefined) {
+          return {
+            stdout: result.stdout ?? '',
+            stderr: result.stderr ?? '',
+            exitCode: result.exit_code,
+          }
+        }
+      }
+
+      throw new Error('BoxLite exec timed out waiting for completion')
     },
 
     async execStream(
       boxId: string,
       req: BoxLiteExecRequest,
     ): Promise<ReadableStream<Uint8Array>> {
-      // 1. POST /exec to start execution
       const execution = await request<BoxLiteExecution>(`/boxes/${boxId}/exec`, {
         method: 'POST',
         body: JSON.stringify(req),
       })
 
-      // 2. GET /executions/{id}/output — return raw SSE stream
-      const response = await request(
-        `/boxes/${boxId}/executions/${execution.execution_id}/output`,
-        { headers: { 'Accept': 'text/event-stream' } },
-        true,
-      )
+      const encoder = new TextEncoder()
+      const self = { request }
 
-      if (!response.ok) {
-        const body = await response.text()
-        throw new Error(`BoxLite API error ${response.status}: ${body}`)
-      }
+      return new ReadableStream<Uint8Array>({
+        async start(controller) {
+          if (execution.exit_code !== null && execution.exit_code !== undefined) {
+            if (execution.stdout) controller.enqueue(encoder.encode(execution.stdout))
+            if (execution.stderr) controller.enqueue(encoder.encode(execution.stderr))
+            controller.close()
+            return
+          }
 
-      if (!response.body) {
-        throw new Error('BoxLite exec stream: no response body')
-      }
+          const timeoutMs = (req.timeout_seconds ?? 300) * 1000
+          const startTime = Date.now()
+          let pollInterval = 100
 
-      // Transform SSE events into decoded data chunks
-      const decoder = new TextDecoder()
-      let buffer = ''
+          while (Date.now() - startTime < timeoutMs) {
+            await new Promise(r => setTimeout(r, pollInterval))
+            pollInterval = Math.min(pollInterval * 2, 2000)
 
-      return response.body.pipeThrough(
-        new TransformStream<Uint8Array, Uint8Array>({
-          transform(chunk, controller) {
-            buffer += decoder.decode(chunk, { stream: true })
-            const lines = buffer.split('\n')
-            buffer = lines.pop() ?? ''
+            try {
+              const result = await self.request<BoxLiteExecution>(
+                `/boxes/${boxId}/executions/${execution.id}`,
+              )
 
-            let currentEvent = ''
-            for (const line of lines) {
-              if (line.startsWith('event:')) {
-                currentEvent = line.slice(6).trim()
-              } else if (line.startsWith('data:')) {
-                const data = line.slice(5).trim()
-                if (currentEvent === 'stdout' || currentEvent === 'stderr') {
-                  const decoded = decodeSSEData(data)
-                  controller.enqueue(new TextEncoder().encode(decoded))
-                }
+              if (result.exit_code !== null && result.exit_code !== undefined) {
+                if (result.stdout) controller.enqueue(encoder.encode(result.stdout))
+                if (result.stderr) controller.enqueue(encoder.encode(result.stderr))
+                controller.close()
+                return
               }
+            } catch (err) {
+              controller.error(err)
+              return
             }
-          },
-          flush(controller) {
-            if (buffer) {
-              const lines = buffer.split('\n')
-              let currentEvent = ''
-              for (const line of lines) {
-                if (line.startsWith('event:')) {
-                  currentEvent = line.slice(6).trim()
-                } else if (line.startsWith('data:')) {
-                  const data = line.slice(5).trim()
-                  if (currentEvent === 'stdout' || currentEvent === 'stderr') {
-                    const decoded = decodeSSEData(data)
-                    controller.enqueue(new TextEncoder().encode(decoded))
-                  }
-                }
-              }
-            }
-            controller.terminate()
-          },
-        }),
-      )
+          }
+
+          controller.error(new Error('BoxLite exec stream timed out'))
+        },
+      })
     },
-
-    // --- Files (native tar API) ---
 
     async uploadFiles(boxId: string, path: string, tarData: Uint8Array): Promise<void> {
       const bearerToken = await ensureToken()
@@ -306,8 +246,6 @@ export function createBoxLiteClient(config: BoxLiteAdapterConfig) {
       return response.body
     },
 
-    // --- Snapshots ---
-
     async createSnapshot(boxId: string, name: string): Promise<BoxLiteSnapshot> {
       return request<BoxLiteSnapshot>(`/boxes/${boxId}/snapshots`, {
         method: 'POST',
@@ -332,5 +270,3 @@ export function createBoxLiteClient(config: BoxLiteAdapterConfig) {
     },
   }
 }
-
-export type BoxLiteClient = ReturnType<typeof createBoxLiteClient>

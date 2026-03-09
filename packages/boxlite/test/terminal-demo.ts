@@ -1,13 +1,13 @@
 /**
  * BoxLite Terminal Demo
  *
- * Creates a sandbox, starts ttyd, and serves an HTML page with xterm.js
- * that connects to the terminal WebSocket.
+ * Creates a sandbox, starts ttyd, and serves an HTML page with ghostty-web
+ * that connects to the terminal WebSocket using the ttyd binary protocol.
  *
  * Usage:
- *   BOXLITE_API_URL=http://localhost:8080 BOXLITE_API_TOKEN=xxx npx tsx test/terminal-demo.ts
+ *   BOXLITE_API_URL=http://localhost:8090 npx tsx test/terminal-demo.ts
  *
- * Then open http://localhost:9090 in your browser.
+ * Then open http://localhost:9091 in your browser.
  */
 import { createProvider, withTerminal } from '@sandbank.dev/core'
 import { BoxLiteAdapter } from '../src/index.js'
@@ -40,12 +40,11 @@ const html = `<!DOCTYPE html>
 <head>
   <meta charset="utf-8">
   <title>Sandbank Terminal — BoxLite</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5/css/xterm.min.css">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      background: #1a1a2e;
-      color: #e0e0e0;
+      background: #1a1b26;
+      color: #a9b1d6;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       height: 100vh;
       display: flex;
@@ -53,8 +52,8 @@ const html = `<!DOCTYPE html>
     }
     header {
       padding: 12px 20px;
-      background: #16213e;
-      border-bottom: 1px solid #0f3460;
+      background: #16161e;
+      border-bottom: 1px solid #292e42;
       display: flex;
       align-items: center;
       gap: 12px;
@@ -76,8 +75,8 @@ const html = `<!DOCTYPE html>
     .info {
       padding: 8px 20px;
       font-size: 12px;
-      color: #888;
-      background: #111;
+      color: #565f89;
+      background: #13131a;
       font-family: monospace;
     }
   </style>
@@ -94,34 +93,60 @@ const html = `<!DOCTYPE html>
   </div>
 
   <script type="module">
-    import { Terminal } from 'https://cdn.jsdelivr.net/npm/@xterm/xterm@5/+esm'
-    import { FitAddon } from 'https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0/+esm'
-    import { WebLinksAddon } from 'https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0/+esm'
+    import { init, Terminal, FitAddon } from 'https://cdn.jsdelivr.net/npm/ghostty-web/+esm'
+
+    // ttyd binary protocol constants
+    const TTYD_INPUT  = '0'.charCodeAt(0)  // 0x30
+    const TTYD_RESIZE = '1'.charCodeAt(0)  // 0x31
+    const TTYD_OUTPUT = '0'.charCodeAt(0)  // 0x30
+
+    const textEncoder = new TextEncoder()
+    const textDecoder = new TextDecoder()
+
+    await init()
 
     const term = new Terminal({
-      cursorBlink: true,
       fontSize: 14,
-      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
+      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, Monaco, monospace",
+      cursorBlink: true,
+      cursorStyle: 'bar',
+      scrollback: 5000,
       theme: {
-        background: '#1a1a2e',
-        foreground: '#e0e0e0',
-        cursor: '#f59e0b',
-        selectionBackground: '#3b82f620',
+        background: '#1a1b26',
+        foreground: '#a9b1d6',
+        cursor: '#c0caf5',
+        selectionBackground: '#33467c',
+        black: '#15161e',
+        red: '#f7768e',
+        green: '#9ece6a',
+        yellow: '#e0af68',
+        blue: '#7aa2f7',
+        magenta: '#bb9af7',
+        cyan: '#7dcfff',
+        white: '#a9b1d6',
+        brightBlack: '#414868',
+        brightRed: '#f7768e',
+        brightGreen: '#9ece6a',
+        brightYellow: '#e0af68',
+        brightBlue: '#7aa2f7',
+        brightMagenta: '#bb9af7',
+        brightCyan: '#7dcfff',
+        brightWhite: '#c0caf5',
       },
     })
 
+    term.open(document.getElementById('terminal-container'))
+
     const fitAddon = new FitAddon()
     term.loadAddon(fitAddon)
-    term.loadAddon(new WebLinksAddon())
-    term.open(document.getElementById('terminal-container'))
     fitAddon.fit()
-
-    window.addEventListener('resize', () => fitAddon.fit())
+    fitAddon.observeResize()
 
     const statusEl = document.getElementById('status')
 
-    // ttyd uses its own WebSocket protocol
-    const ws = new WebSocket('${info.url}')
+    // Connect to ttyd WebSocket with 'tty' subprotocol
+    const wsUrl = '${info.url}'.replace(/^https:\\/\\//, 'wss://').replace(/^http:\\/\\//, 'ws://')
+    const ws = new WebSocket(wsUrl, ['tty'])
     ws.binaryType = 'arraybuffer'
 
     ws.onopen = () => {
@@ -129,28 +154,24 @@ const html = `<!DOCTYPE html>
       statusEl.style.background = '#0a3d22'
       statusEl.style.color = '#4ade80'
       term.focus()
+
+      // ttyd handshake: send auth token and initial dimensions
+      const dims = fitAddon.proposeDimensions()
+      ws.send(JSON.stringify({
+        AuthToken: '',
+        columns: dims?.cols ?? 80,
+        rows: dims?.rows ?? 24,
+      }))
     }
 
+    // ttyd output: first byte is message type (0x30 = output)
     ws.onmessage = (ev) => {
-      const data = ev.data
-      if (data instanceof ArrayBuffer) {
-        const view = new Uint8Array(data)
-        // ttyd protocol: first byte is message type
-        // 0 = output, 1 = set window title, 2 = set preferences
-        if (view[0] === 0) {
-          term.write(view.slice(1))
-        }
-      } else if (typeof data === 'string') {
-        // JSON control messages from ttyd
-        try {
-          const msg = JSON.parse(data)
-          if (msg.AuthToken) {
-            // Respond with auth token
-            ws.send(JSON.stringify({ AuthToken: msg.AuthToken }))
-          }
-        } catch {
-          term.write(data)
-        }
+      if (!(ev.data instanceof ArrayBuffer)) return
+      const data = new Uint8Array(ev.data)
+      if (data.length < 1) return
+      if (data[0] === TTYD_OUTPUT) {
+        const text = textDecoder.decode(data.slice(1))
+        term.write(text)
       }
     }
 
@@ -158,7 +179,6 @@ const html = `<!DOCTYPE html>
       statusEl.textContent = 'disconnected'
       statusEl.style.background = '#3d0a0a'
       statusEl.style.color = '#f87171'
-      term.write('\\r\\n\\x1b[31m[Connection closed]\\x1b[0m\\r\\n')
     }
 
     ws.onerror = () => {
@@ -167,26 +187,25 @@ const html = `<!DOCTYPE html>
       statusEl.style.color = '#f87171'
     }
 
-    // Send input to ttyd
-    // ttyd protocol: first byte 0 = input, 1 = resize
+    // Forward terminal input using ttyd binary protocol (0x30 = input)
     term.onData((data) => {
-      const encoder = new TextEncoder()
-      const encoded = encoder.encode(data)
-      const buf = new Uint8Array(encoded.length + 1)
-      buf[0] = 0 // input type
-      buf.set(encoded, 1)
-      ws.send(buf)
+      if (ws.readyState !== WebSocket.OPEN) return
+      const encoded = textEncoder.encode(data)
+      const msg = new Uint8Array(encoded.length + 1)
+      msg[0] = TTYD_INPUT
+      msg.set(encoded, 1)
+      ws.send(msg)
     })
 
-    // Send resize events
+    // Send resize events using ttyd binary protocol (0x31 = resize)
     term.onResize(({ cols, rows }) => {
-      const msg = JSON.stringify({ columns: cols, rows: rows })
-      const encoder = new TextEncoder()
-      const encoded = encoder.encode(msg)
-      const buf = new Uint8Array(encoded.length + 1)
-      buf[0] = 1 // resize type
-      buf.set(encoded, 1)
-      ws.send(buf)
+      if (ws.readyState !== WebSocket.OPEN) return
+      const json = JSON.stringify({ columns: cols, rows })
+      const encoded = textEncoder.encode(json)
+      const msg = new Uint8Array(encoded.length + 1)
+      msg[0] = TTYD_RESIZE
+      msg.set(encoded, 1)
+      ws.send(msg)
     })
   </script>
 </body>
