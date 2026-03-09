@@ -10,7 +10,7 @@ import type {
 
 export function createBoxLiteClient(config: BoxLiteAdapterConfig) {
   const { apiUrl } = config
-  const prefix = config.prefix ?? 'default'
+  const prefix = config.prefix ?? ''
   const baseUrl = apiUrl.replace(/\/$/, '') + '/v1'
 
   // --- Token management ---
@@ -21,13 +21,11 @@ export function createBoxLiteClient(config: BoxLiteAdapterConfig) {
     // If a static token was provided, always use it
     if (config.apiToken) return config.apiToken
 
+    // No auth configured — run without authentication
+    if (!config.clientId || !config.clientSecret) return ''
+
     // If we have a valid cached token, use it
     if (token && Date.now() < tokenExpiresAt) return token
-
-    // Acquire token via OAuth2 client credentials
-    if (!config.clientId || !config.clientSecret) {
-      throw new Error('BoxLite: either apiToken or clientId+clientSecret must be provided')
-    }
 
     const response = await fetch(`${baseUrl}/oauth/tokens`, {
       method: 'POST',
@@ -59,15 +57,15 @@ export function createBoxLiteClient(config: BoxLiteAdapterConfig) {
     rawResponse = false,
   ): Promise<T | Response> {
     const bearerToken = await ensureToken()
-    const url = `${baseUrl}/${prefix}${path}`
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        'Authorization': `Bearer ${bearerToken}`,
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-    })
+    const url = prefix ? `${baseUrl}/${prefix}${path}` : `${baseUrl}${path}`
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...options.headers as Record<string, string>,
+    }
+    if (bearerToken) {
+      headers['Authorization'] = `Bearer ${bearerToken}`
+    }
+    const response = await fetch(url, { ...options, headers })
 
     if (rawResponse) return response
 
@@ -270,7 +268,7 @@ export function createBoxLiteClient(config: BoxLiteAdapterConfig) {
 
     async uploadFiles(boxId: string, path: string, tarData: Uint8Array): Promise<void> {
       const bearerToken = await ensureToken()
-      const url = `${baseUrl}/${prefix}/boxes/${boxId}/files?path=${encodeURIComponent(path)}`
+      const url = `${baseUrl}${prefix ? `/${prefix}` : ''}/boxes/${boxId}/files?path=${encodeURIComponent(path)}`
       const response = await fetch(url, {
         method: 'PUT',
         headers: {
@@ -288,7 +286,7 @@ export function createBoxLiteClient(config: BoxLiteAdapterConfig) {
 
     async downloadFiles(boxId: string, path: string): Promise<ReadableStream<Uint8Array>> {
       const bearerToken = await ensureToken()
-      const url = `${baseUrl}/${prefix}/boxes/${boxId}/files?path=${encodeURIComponent(path)}`
+      const url = `${baseUrl}${prefix ? `/${prefix}` : ''}/boxes/${boxId}/files?path=${encodeURIComponent(path)}`
       const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${bearerToken}`,

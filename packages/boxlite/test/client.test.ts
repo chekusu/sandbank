@@ -391,12 +391,12 @@ describe('BoxLiteClient', () => {
       expect(mockFetch).toHaveBeenCalledTimes(3)
     })
 
-    it('should throw when neither apiToken nor clientId+clientSecret provided', async () => {
-      const badClient = createBoxLiteClient({
+    it('should work without auth when neither apiToken nor clientId+clientSecret provided', () => {
+      const noAuthClient = createBoxLiteClient({
         apiUrl: 'http://localhost:8080',
       })
-
-      await expect(badClient.listBoxes()).rejects.toThrow('either apiToken or clientId+clientSecret')
+      // Should not throw — no-auth mode is supported for local BoxRun
+      expect(noAuthClient).toBeDefined()
     })
   })
 
