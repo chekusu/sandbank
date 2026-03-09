@@ -30,7 +30,19 @@
 
 ---
 
-## P3 — 未来 Provider
+## P3 — Service Layer
+
+- [x] Core ServiceProvider 接口（ServiceConfig / ServiceInfo / ServiceBinding）
+- [x] `withServices()` 能力检测
+- [x] `create()` 自动注入 service 凭证到环境变量
+- [x] `@sandbank.dev/db9` — db9.ai 适配器（REST API 客户端 + skill 注入）
+- [x] Brain schema（memory / tasks / artifacts）+ brain skill
+- [x] `createDb9Service` / `createDb9Brain` 便捷函数
+- [ ] 集成测试 — 需 DB9_TOKEN 验证真实 API
+
+---
+
+## P4 — 未来 Provider
 
 - [x] BoxLite — 裸金属 KVM/HVF 微型 VM（exec.stream + snapshot + sleep + terminal + port.expose）
 - [ ] E2B — 评估 API 兼容性
@@ -54,3 +66,4 @@
 - [x] SDK 层 `connectTerminal` + `TerminalSession` 双向 PTY 封装
 - [x] uploadArchive / downloadArchive exec fallback（所有 provider 自动获得）
 - [x] BoxLite 适配器（exec.stream + snapshot + sleep + terminal + port.expose）
+- [x] Service Layer 接口 + db9 适配器 + Brain 多 Agent 记忆层
