@@ -23,6 +23,8 @@ import { emitEvent } from './observer.js'
 import { CapabilityNotSupportedError, ProviderError } from './errors.js'
 import { injectSkills } from './skill-inject.js'
 import { readFileViaExec, writeFileViaExec, uploadArchiveViaExec, downloadArchiveViaExec } from './file-helpers.js'
+import { setupSandboxUser, wrapAsUser } from './sandbox-user.js'
+import type { SandboxUserInfo } from './types.js'
 
 /**
  * 将 AdapterSandbox 包装为完整的 Sandbox 接口。
@@ -34,6 +36,7 @@ function wrapSandbox(
   providerName: string,
   observer?: SandboxObserver,
   taskId?: string,
+  userInfo?: SandboxUserInfo,
 ): Sandbox {
   function emit(type: SandboxEventType, data: Record<string, unknown>): void {
     if (!observer) return
@@ -44,11 +47,22 @@ function wrapSandbox(
     get id() { return raw.id },
     get state() { return raw.state },
     get createdAt() { return raw.createdAt },
+    get user() { return userInfo },
 
     async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
+      let cmd = command
+      let opts = options
+
+      // 非 root 用户包装: 默认以该用户执行，asRoot 跳过
+      if (userInfo && !options?.asRoot) {
+        cmd = wrapAsUser(command, userInfo.name, options?.cwd)
+        // cwd 已包含在 wrapped command 中，不再传给 adapter
+        opts = options ? { ...options, cwd: undefined, asRoot: undefined } : undefined
+      }
+
       const start = Date.now()
       try {
-        const result = await raw.exec(command, options)
+        const result = await raw.exec(cmd, opts)
         emit('sandbox:exec', { command, exitCode: result.exitCode, duration: Date.now() - start })
         return result
       } catch (err) {
@@ -181,7 +195,14 @@ export function createProvider(
       }
 
       const raw = await adapter.createSandbox(config)
-      const sandbox = wrapSandbox(raw, adapter.name, observer, taskId)
+
+      // 创建非 root 用户（如果配置了）
+      let userInfo: SandboxUserInfo | undefined
+      if (config.user) {
+        userInfo = await setupSandboxUser(raw, config.user)
+      }
+
+      const sandbox = wrapSandbox(raw, adapter.name, observer, taskId, userInfo)
 
       if (config.skills?.length) {
         try {

@@ -67,6 +67,14 @@ export interface CreateConfig {
 
   /** 端口映射 [hostPort, guestPort][]。本地模式使用，将容器端口转发到宿主机端口 */
   ports?: [number, number][]
+
+  /**
+   * 创建非 root 用户并以该用户身份执行命令。
+   * - string: 用户名（等价于 { name: 'xxx' }）
+   * - object: 完整配置
+   * - 未设置: 保持 root（向后兼容）
+   */
+  user?: string | SandboxUser
 }
 
 export interface ListFilter {
@@ -75,6 +83,22 @@ export interface ListFilter {
 }
 
 // --- Sandbox（实例） ---
+
+export interface SandboxUser {
+  /** 用户名。默认: 'sandbank' */
+  name?: string
+  /** 指定 UID。默认: 自动分配 */
+  uid?: number
+  /** 是否授予 sudo 权限。默认: true */
+  sudo?: boolean
+}
+
+export interface SandboxUserInfo {
+  /** 用户名 */
+  name: string
+  /** Home 目录路径 */
+  home: string
+}
 
 export interface Sandbox {
   /** 沙箱唯一 ID */
@@ -85,6 +109,9 @@ export interface Sandbox {
 
   /** 创建时间 */
   readonly createdAt: string
+
+  /** 非 root 用户信息（如已配置） */
+  readonly user?: SandboxUserInfo
 
   /** 执行命令，等待完成 */
   exec(command: string, options?: ExecOptions): Promise<ExecResult>
@@ -109,6 +136,8 @@ export interface ExecOptions {
   timeout?: number
   /** 工作目录 */
   cwd?: string
+  /** 以 root 身份执行（仅在配置了 user 时有意义）。默认: false */
+  asRoot?: boolean
 }
 
 export interface ExecResult {

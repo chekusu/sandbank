@@ -35,6 +35,9 @@ export type {
   AdapterSandbox,
   // Skill
   SkillDefinition,
+  // User
+  SandboxUser,
+  SandboxUserInfo,
 } from './types.js'
 
 // Provider factory
@@ -71,6 +74,9 @@ export { injectSkills } from './skill-inject.js'
 
 // File helpers (for adapter authors)
 export { writeFileViaExec, readFileViaExec, uploadArchiveViaExec, downloadArchiveViaExec } from './file-helpers.js'
+
+// Sandbox user
+export { setupSandboxUser, wrapAsUser } from './sandbox-user.js'
 
 // Observer
 export type { SandboxEvent, SandboxEventType, SandboxObserver, ProviderOptions } from './observer.js'

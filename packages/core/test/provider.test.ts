@@ -625,3 +625,88 @@ describe('createProvider with observer', () => {
     expect(events[0]!.data.srcDir).toBe('/')
   })
 })
+
+describe('createProvider with user', () => {
+  it('sets up non-root user and wraps exec', async () => {
+    const execFn = vi.fn(async (cmd: string) => {
+      // setupSandboxUser calls
+      if (cmd.startsWith('id ') || cmd.includes('useradd')) return { exitCode: 0, stdout: '', stderr: '' }
+      if (cmd.startsWith('eval echo ~')) return { exitCode: 0, stdout: '/home/sandbank\n', stderr: '' }
+      if (cmd.includes('sudoers.d/')) return { exitCode: 0, stdout: '', stderr: '' }
+      // actual exec call (wrapped)
+      return { exitCode: 0, stdout: 'sandbank\n', stderr: '' }
+    })
+    const adapter = mockAdapter({
+      createSandbox: async () => mockAdapterSandbox({ exec: execFn }),
+    })
+    const provider = createProvider(adapter)
+    const sandbox = await provider.create({ image: 'node:22', user: 'sandbank' })
+
+    expect(sandbox.user).toEqual({ name: 'sandbank', home: '/home/sandbank' })
+
+    await sandbox.exec('whoami')
+    // Last exec call should be wrapped with su
+    const lastCall = execFn.mock.calls[execFn.mock.calls.length - 1]!
+    expect(lastCall[0]).toBe("su - sandbank -c 'whoami'")
+  })
+
+  it('exec with asRoot skips user wrapping', async () => {
+    const execFn = vi.fn(async (cmd: string) => {
+      if (cmd.startsWith('id ') || cmd.includes('useradd')) return { exitCode: 0, stdout: '', stderr: '' }
+      if (cmd.startsWith('eval echo ~')) return { exitCode: 0, stdout: '/home/sandbank\n', stderr: '' }
+      if (cmd.includes('sudoers.d/')) return { exitCode: 0, stdout: '', stderr: '' }
+      return { exitCode: 0, stdout: '', stderr: '' }
+    })
+    const adapter = mockAdapter({
+      createSandbox: async () => mockAdapterSandbox({ exec: execFn }),
+    })
+    const provider = createProvider(adapter)
+    const sandbox = await provider.create({ image: 'node:22', user: 'sandbank' })
+
+    await sandbox.exec('apt-get install -y git', { asRoot: true })
+    const lastCall = execFn.mock.calls[execFn.mock.calls.length - 1]!
+    expect(lastCall[0]).toBe('apt-get install -y git')
+  })
+
+  it('exec with cwd includes cd in wrapped command', async () => {
+    const execFn = vi.fn(async (cmd: string) => {
+      if (cmd.startsWith('id ') || cmd.includes('useradd')) return { exitCode: 0, stdout: '', stderr: '' }
+      if (cmd.startsWith('eval echo ~')) return { exitCode: 0, stdout: '/home/sandbank\n', stderr: '' }
+      if (cmd.includes('sudoers.d/')) return { exitCode: 0, stdout: '', stderr: '' }
+      return { exitCode: 0, stdout: '', stderr: '' }
+    })
+    const adapter = mockAdapter({
+      createSandbox: async () => mockAdapterSandbox({ exec: execFn }),
+    })
+    const provider = createProvider(adapter)
+    const sandbox = await provider.create({ image: 'node:22', user: 'sandbank' })
+
+    await sandbox.exec('ls', { cwd: '/workspace' })
+    const lastCall = execFn.mock.calls[execFn.mock.calls.length - 1]!
+    expect(lastCall[0]).toBe('su - sandbank -c \'cd "/workspace" && ls\'')
+    // cwd should not be passed to adapter (already in wrapped command)
+    expect(lastCall[1]?.cwd).toBeUndefined()
+  })
+
+  it('sandbox.user is undefined when no user configured', async () => {
+    const adapter = mockAdapter()
+    const provider = createProvider(adapter)
+    const sandbox = await provider.create({ image: 'node:22' })
+    expect(sandbox.user).toBeUndefined()
+  })
+
+  it('supports string shorthand for user config', async () => {
+    const execFn = vi.fn(async (cmd: string) => {
+      if (cmd.startsWith('id ') || cmd.includes('useradd')) return { exitCode: 0, stdout: '', stderr: '' }
+      if (cmd.startsWith('eval echo ~')) return { exitCode: 0, stdout: '/home/claude\n', stderr: '' }
+      if (cmd.includes('sudoers.d/')) return { exitCode: 0, stdout: '', stderr: '' }
+      return { exitCode: 0, stdout: '', stderr: '' }
+    })
+    const adapter = mockAdapter({
+      createSandbox: async () => mockAdapterSandbox({ exec: execFn }),
+    })
+    const provider = createProvider(adapter)
+    const sandbox = await provider.create({ image: 'node:22', user: 'claude' })
+    expect(sandbox.user).toEqual({ name: 'claude', home: '/home/claude' })
+  })
+})
