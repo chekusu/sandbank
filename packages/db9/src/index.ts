@@ -16,5 +16,8 @@ export { BRAIN_SKILL, brainSkillDefinition } from './brain-skill.js'
 // Convenience
 export { createDb9Service, createDb9Brain } from './convenience.js'
 
+// Observer
+export { EVENTS_SCHEMA, createDb9Observer } from './db9-observer.js'
+
 // Types
 export type { Db9Database, Db9SqlResult, Db9ApiError } from './types.js'

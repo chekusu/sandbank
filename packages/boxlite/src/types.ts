@@ -116,6 +116,8 @@ export interface BoxLiteCreateParams {
   env?: Record<string, string>
   auto_remove?: boolean
   security?: string
+  /** Port mappings [hostPort, guestPort][] for local mode */
+  ports?: [number, number][]
 }
 
 export interface BoxLiteTokenResponse {

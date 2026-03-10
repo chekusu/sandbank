@@ -72,6 +72,14 @@ export { injectSkills } from './skill-inject.js'
 // File helpers (for adapter authors)
 export { writeFileViaExec, readFileViaExec, uploadArchiveViaExec, downloadArchiveViaExec } from './file-helpers.js'
 
+// Observer
+export type { SandboxEvent, SandboxEventType, SandboxObserver, ProviderOptions } from './observer.js'
+export { emitEvent, createNoopObserver, createWebhookObserver } from './observer.js'
+
+// Hooks (Claude Code inner-agent observation)
+export type { ClaudeHookEvent, InjectHooksConfig, HookEventData, ClaudeLoginConfig, ClaudeLoginResult } from './hooks.js'
+export { injectClaudeHooks, readHookEvents, startClaudeLogin, DEFAULT_EVENTS_FILE } from './hooks.js'
+
 // Session types
 export type {
   MessagePriority,

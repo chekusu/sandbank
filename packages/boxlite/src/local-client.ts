@@ -69,10 +69,12 @@ class Bridge:
 
         image = params["image"]
         kwargs = {"image": image}
-        for k in ("cpu", "memory_mb", "disk_size_gb", "env", "working_dir"):
+        for k in ("cpu", "memory_mb", "disk_size_gb", "env", "working_dir", "ports"):
             if params.get(k) is not None:
                 if k == "env" and isinstance(params[k], dict):
                     kwargs[k] = list(params[k].items())
+                elif k == "ports" and isinstance(params[k], list):
+                    kwargs[k] = [tuple(p) for p in params[k]]
                 else:
                     kwargs[k] = params[k]
 
@@ -468,7 +470,13 @@ export function createBoxLiteLocalClient(config: BoxLiteLocalConfig): BoxLiteCli
     ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
       const timeoutMs = (req.timeout_seconds ?? 300) * 1000
       const result = await send<{ stdout: string; stderr: string; exit_code: number }>(
-        { action: 'exec', box_id: boxId, cmd: req.cmd },
+        {
+          action: 'exec',
+          box_id: boxId,
+          cmd: req.cmd,
+          ...(req.working_dir ? { working_dir: req.working_dir } : {}),
+          ...(req.timeout_seconds ? { timeout_seconds: req.timeout_seconds } : {}),
+        },
         timeoutMs,
       )
       return {

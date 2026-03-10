@@ -18,6 +18,8 @@ import type {
   VolumeInfo,
   VolumeProvider,
 } from './types.js'
+import type { SandboxObserver, SandboxEventType } from './observer.js'
+import { emitEvent } from './observer.js'
 import { CapabilityNotSupportedError, ProviderError } from './errors.js'
 import { injectSkills } from './skill-inject.js'
 import { readFileViaExec, writeFileViaExec, uploadArchiveViaExec, downloadArchiveViaExec } from './file-helpers.js'
@@ -25,35 +27,61 @@ import { readFileViaExec, writeFileViaExec, uploadArchiveViaExec, downloadArchiv
 /**
  * 将 AdapterSandbox 包装为完整的 Sandbox 接口。
  * 自动补充缺失的 writeFile/readFile 默认实现。
+ * 若传入 observer，自动对所有操作发射事件。
  */
-function wrapSandbox(raw: AdapterSandbox, providerName: string): Sandbox {
+function wrapSandbox(
+  raw: AdapterSandbox,
+  providerName: string,
+  observer?: SandboxObserver,
+  taskId?: string,
+): Sandbox {
+  function emit(type: SandboxEventType, data: Record<string, unknown>): void {
+    if (!observer) return
+    emitEvent(observer, { type, sandboxId: raw.id, taskId, timestamp: Date.now(), data })
+  }
+
   const sandbox: Sandbox & Record<string, unknown> = {
     get id() { return raw.id },
     get state() { return raw.state },
     get createdAt() { return raw.createdAt },
 
-    exec(command: string, options?: ExecOptions): Promise<ExecResult> {
-      return raw.exec(command, options)
+    async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
+      const start = Date.now()
+      try {
+        const result = await raw.exec(command, options)
+        emit('sandbox:exec', { command, exitCode: result.exitCode, duration: Date.now() - start })
+        return result
+      } catch (err) {
+        emit('sandbox:exec', { command, error: (err as Error).message, duration: Date.now() - start })
+        throw err
+      }
     },
 
-    writeFile(path: string, content: string | Uint8Array): Promise<void> {
-      if (raw.writeFile) return raw.writeFile(path, content)
-      return writeFileViaExec(raw, path, content)
+    async writeFile(path: string, content: string | Uint8Array): Promise<void> {
+      const size = typeof content === 'string' ? content.length : content.byteLength
+      const fn = raw.writeFile ? raw.writeFile.bind(raw) : (p: string, c: string | Uint8Array) => writeFileViaExec(raw, p, c)
+      await fn(path, content)
+      emit('sandbox:writeFile', { path, size })
     },
 
-    readFile(path: string): Promise<Uint8Array> {
-      if (raw.readFile) return raw.readFile(path)
-      return readFileViaExec(raw, path)
+    async readFile(path: string): Promise<Uint8Array> {
+      const fn = raw.readFile ? raw.readFile.bind(raw) : (p: string) => readFileViaExec(raw, p)
+      const result = await fn(path)
+      emit('sandbox:readFile', { path, size: result.byteLength })
+      return result
     },
 
-    uploadArchive(archive: Uint8Array | ReadableStream, destDir?: string): Promise<void> {
-      if (raw.uploadArchive) return raw.uploadArchive(archive, destDir)
-      return uploadArchiveViaExec(raw, archive, destDir)
+    async uploadArchive(archive: Uint8Array | ReadableStream, destDir?: string): Promise<void> {
+      const fn = raw.uploadArchive ? raw.uploadArchive.bind(raw) : (a: Uint8Array | ReadableStream, d?: string) => uploadArchiveViaExec(raw, a, d)
+      await fn(archive, destDir)
+      emit('sandbox:uploadArchive', { destDir: destDir ?? '/' })
     },
 
-    downloadArchive(srcDir?: string): Promise<ReadableStream> {
-      if (raw.downloadArchive) return raw.downloadArchive(srcDir)
-      return downloadArchiveViaExec(raw, srcDir)
+    async downloadArchive(srcDir?: string): Promise<ReadableStream> {
+      const fn = raw.downloadArchive ? raw.downloadArchive.bind(raw) : (s?: string) => downloadArchiveViaExec(raw, s)
+      const result = await fn(srcDir)
+      emit('sandbox:downloadArchive', { srcDir: srcDir ?? '/' })
+      return result
     },
   }
 
@@ -119,8 +147,13 @@ function detectCapabilities(adapter: SandboxAdapter): ReadonlySet<Capability> {
 }
 
 /** 创建一个 SandboxProvider */
-export function createProvider(adapter: SandboxAdapter): SandboxProvider {
+export function createProvider(
+  adapter: SandboxAdapter,
+  options?: { observer?: SandboxObserver; taskId?: string },
+): SandboxProvider {
   const capabilities = detectCapabilities(adapter)
+  const observer = options?.observer
+  const taskId = options?.taskId
 
   const provider: SandboxProvider = {
     get name() { return adapter.name },
@@ -148,7 +181,7 @@ export function createProvider(adapter: SandboxAdapter): SandboxProvider {
       }
 
       const raw = await adapter.createSandbox(config)
-      const sandbox = wrapSandbox(raw, adapter.name)
+      const sandbox = wrapSandbox(raw, adapter.name, observer, taskId)
 
       if (config.skills?.length) {
         try {
@@ -164,7 +197,7 @@ export function createProvider(adapter: SandboxAdapter): SandboxProvider {
 
     async get(id: string): Promise<Sandbox> {
       const raw = await adapter.getSandbox(id)
-      return wrapSandbox(raw, adapter.name)
+      return wrapSandbox(raw, adapter.name, observer, taskId)
     },
 
     async list(filter?: ListFilter): Promise<SandboxInfo[]> {

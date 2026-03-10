@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { createProvider } from '../src/provider.js'
 
 import type { SandboxAdapter, AdapterSandbox, Capability } from '../src/types.js'
+import type { SandboxObserver, SandboxEvent } from '../src/observer.js'
 
 function mockAdapterSandbox(overrides: Partial<AdapterSandbox> = {}): AdapterSandbox {
   return {
@@ -418,5 +419,209 @@ describe('createProvider', () => {
     const sandbox = await provider.create({ image: 'node:22' }) as any
     expect(typeof sandbox.execStream).toBe('function')
     expect(typeof sandbox.sleep).toBe('function')
+  })
+})
+
+describe('createProvider with observer', () => {
+  it('emits sandbox:exec event on exec()', async () => {
+    const events: SandboxEvent[] = []
+    const observer: SandboxObserver = { onEvent: (e) => { events.push(e) } }
+    const adapter = mockAdapter()
+    const provider = createProvider(adapter, { observer })
+    const sandbox = await provider.create({ image: 'node:22' })
+
+    await sandbox.exec('echo hi')
+
+    expect(events).toHaveLength(1)
+    expect(events[0]!.type).toBe('sandbox:exec')
+    expect(events[0]!.sandboxId).toBe('sb-mock')
+    expect(events[0]!.data.command).toBe('echo hi')
+    expect(events[0]!.data.exitCode).toBe(0)
+    expect(typeof events[0]!.data.duration).toBe('number')
+  })
+
+  it('emits sandbox:exec event with error info on exec failure', async () => {
+    const events: SandboxEvent[] = []
+    const observer: SandboxObserver = { onEvent: (e) => { events.push(e) } }
+    const adapter = mockAdapter({
+      createSandbox: async () => mockAdapterSandbox({
+        exec: vi.fn(async () => { throw new Error('command failed') }),
+      }),
+    })
+    const provider = createProvider(adapter, { observer })
+    const sandbox = await provider.create({ image: 'node:22' })
+
+    await expect(sandbox.exec('bad cmd')).rejects.toThrow('command failed')
+
+    expect(events).toHaveLength(1)
+    expect(events[0]!.data.error).toBe('command failed')
+    expect(events[0]!.data.command).toBe('bad cmd')
+  })
+
+  it('emits sandbox:writeFile event', async () => {
+    const events: SandboxEvent[] = []
+    const observer: SandboxObserver = { onEvent: (e) => { events.push(e) } }
+    const nativeWrite = vi.fn(async () => {})
+    const adapter = mockAdapter({
+      createSandbox: async () => mockAdapterSandbox({ writeFile: nativeWrite }),
+    })
+    const provider = createProvider(adapter, { observer })
+    const sandbox = await provider.create({ image: 'node:22' })
+
+    await sandbox.writeFile('/tmp/test.txt', 'hello world')
+
+    expect(events).toHaveLength(1)
+    expect(events[0]!.type).toBe('sandbox:writeFile')
+    expect(events[0]!.data.path).toBe('/tmp/test.txt')
+    expect(events[0]!.data.size).toBe(11)
+  })
+
+  it('emits sandbox:readFile event', async () => {
+    const events: SandboxEvent[] = []
+    const observer: SandboxObserver = { onEvent: (e) => { events.push(e) } }
+    const nativeRead = vi.fn(async () => new Uint8Array([1, 2, 3]))
+    const adapter = mockAdapter({
+      createSandbox: async () => mockAdapterSandbox({ readFile: nativeRead }),
+    })
+    const provider = createProvider(adapter, { observer })
+    const sandbox = await provider.create({ image: 'node:22' })
+
+    await sandbox.readFile('/tmp/data.bin')
+
+    expect(events).toHaveLength(1)
+    expect(events[0]!.type).toBe('sandbox:readFile')
+    expect(events[0]!.data.path).toBe('/tmp/data.bin')
+    expect(events[0]!.data.size).toBe(3)
+  })
+
+  it('emits sandbox:uploadArchive event', async () => {
+    const events: SandboxEvent[] = []
+    const observer: SandboxObserver = { onEvent: (e) => { events.push(e) } }
+    const nativeUpload = vi.fn(async () => {})
+    const adapter = mockAdapter({
+      createSandbox: async () => mockAdapterSandbox({ uploadArchive: nativeUpload }),
+    })
+    const provider = createProvider(adapter, { observer })
+    const sandbox = await provider.create({ image: 'node:22' })
+
+    await sandbox.uploadArchive(new Uint8Array([1]), '/workspace')
+
+    expect(events).toHaveLength(1)
+    expect(events[0]!.type).toBe('sandbox:uploadArchive')
+    expect(events[0]!.data.destDir).toBe('/workspace')
+  })
+
+  it('emits sandbox:downloadArchive event', async () => {
+    const events: SandboxEvent[] = []
+    const observer: SandboxObserver = { onEvent: (e) => { events.push(e) } }
+    const nativeDownload = vi.fn(async () => new ReadableStream())
+    const adapter = mockAdapter({
+      createSandbox: async () => mockAdapterSandbox({ downloadArchive: nativeDownload }),
+    })
+    const provider = createProvider(adapter, { observer })
+    const sandbox = await provider.create({ image: 'node:22' })
+
+    await sandbox.downloadArchive('/src')
+
+    expect(events).toHaveLength(1)
+    expect(events[0]!.type).toBe('sandbox:downloadArchive')
+    expect(events[0]!.data.srcDir).toBe('/src')
+  })
+
+  it('attaches taskId from options to all events', async () => {
+    const events: SandboxEvent[] = []
+    const observer: SandboxObserver = { onEvent: (e) => { events.push(e) } }
+    const nativeWrite = vi.fn(async () => {})
+    const adapter = mockAdapter({
+      createSandbox: async () => mockAdapterSandbox({ writeFile: nativeWrite }),
+    })
+    const provider = createProvider(adapter, { observer, taskId: 'task-42' })
+    const sandbox = await provider.create({ image: 'node:22' })
+
+    await sandbox.exec('ls')
+    await sandbox.writeFile('/a', 'b')
+
+    expect(events).toHaveLength(2)
+    expect(events[0]!.taskId).toBe('task-42')
+    expect(events[1]!.taskId).toBe('task-42')
+  })
+
+  it('does not emit events when no observer is set', async () => {
+    // Just ensure no errors when observer is undefined
+    const adapter = mockAdapter()
+    const provider = createProvider(adapter)
+    const sandbox = await provider.create({ image: 'node:22' })
+    await sandbox.exec('echo hi')
+    // No assertion needed — just no crash
+  })
+
+  it('observer errors do not break sandbox operations', async () => {
+    const observer: SandboxObserver = {
+      onEvent() { throw new Error('observer boom') },
+    }
+    const adapter = mockAdapter()
+    const provider = createProvider(adapter, { observer })
+    const sandbox = await provider.create({ image: 'node:22' })
+
+    const result = await sandbox.exec('echo hi')
+    expect(result.stdout).toBe('hello')
+  })
+
+  it('observer applies to sandbox from get()', async () => {
+    const events: SandboxEvent[] = []
+    const observer: SandboxObserver = { onEvent: (e) => { events.push(e) } }
+    const adapter = mockAdapter()
+    const provider = createProvider(adapter, { observer })
+    const sandbox = await provider.get('sb-mock')
+
+    await sandbox.exec('echo hi')
+
+    expect(events).toHaveLength(1)
+    expect(events[0]!.type).toBe('sandbox:exec')
+  })
+
+  it('writeFile emits size for Uint8Array content', async () => {
+    const events: SandboxEvent[] = []
+    const observer: SandboxObserver = { onEvent: (e) => { events.push(e) } }
+    const nativeWrite = vi.fn(async () => {})
+    const adapter = mockAdapter({
+      createSandbox: async () => mockAdapterSandbox({ writeFile: nativeWrite }),
+    })
+    const provider = createProvider(adapter, { observer })
+    const sandbox = await provider.create({ image: 'node:22' })
+
+    await sandbox.writeFile('/bin', new Uint8Array([1, 2, 3, 4, 5]))
+
+    expect(events[0]!.data.size).toBe(5)
+  })
+
+  it('uploadArchive defaults destDir to /', async () => {
+    const events: SandboxEvent[] = []
+    const observer: SandboxObserver = { onEvent: (e) => { events.push(e) } }
+    const nativeUpload = vi.fn(async () => {})
+    const adapter = mockAdapter({
+      createSandbox: async () => mockAdapterSandbox({ uploadArchive: nativeUpload }),
+    })
+    const provider = createProvider(adapter, { observer })
+    const sandbox = await provider.create({ image: 'node:22' })
+
+    await sandbox.uploadArchive(new Uint8Array([1]))
+
+    expect(events[0]!.data.destDir).toBe('/')
+  })
+
+  it('downloadArchive defaults srcDir to /', async () => {
+    const events: SandboxEvent[] = []
+    const observer: SandboxObserver = { onEvent: (e) => { events.push(e) } }
+    const nativeDownload = vi.fn(async () => new ReadableStream())
+    const adapter = mockAdapter({
+      createSandbox: async () => mockAdapterSandbox({ downloadArchive: nativeDownload }),
+    })
+    const provider = createProvider(adapter, { observer })
+    const sandbox = await provider.create({ image: 'node:22' })
+
+    await sandbox.downloadArchive()
+
+    expect(events[0]!.data.srcDir).toBe('/')
   })
 })

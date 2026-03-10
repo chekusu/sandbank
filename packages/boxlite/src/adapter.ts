@@ -206,11 +206,18 @@ export class BoxLiteAdapter implements SandboxAdapter {
         image: config.image,
         cpu: config.resources?.cpu,
         memory_mb: config.resources?.memory,
+        disk_size_gb: config.resources?.disk,
         env: config.env,
         auto_remove: false,
+        ports: config.ports,
       })
 
       const portMap = new Map<number, number>()
+      if (config.ports) {
+        for (const [hostPort, guestPort] of config.ports) {
+          portMap.set(guestPort, hostPort)
+        }
+      }
       this.portMaps.set(box.id, portMap)
 
       if (box.status === 'configured' || box.status === 'stopped') {

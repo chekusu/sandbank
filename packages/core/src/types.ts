@@ -64,6 +64,9 @@ export interface CreateConfig {
 
   /** 绑定的服务。凭证自动注入为环境变量（需 provider 支持 'services' 能力） */
   services?: ServiceBinding[]
+
+  /** 端口映射 [hostPort, guestPort][]。本地模式使用，将容器端口转发到宿主机端口 */
+  ports?: [number, number][]
 }
 
 export interface ListFilter {
