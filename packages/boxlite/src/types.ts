@@ -107,7 +107,9 @@ export interface BoxLiteSnapshot {
 }
 
 export interface BoxLiteCreateParams {
-  image: string
+  image?: string
+  /** Path to a local OCI layout directory. When set, overrides `image` (no registry pull). */
+  rootfs_path?: string
   name?: string
   cpu?: number
   memory_mb?: number

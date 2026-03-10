@@ -202,8 +202,10 @@ export class BoxLiteAdapter implements SandboxAdapter {
 
   async createSandbox(config: CreateConfig): Promise<AdapterSandbox> {
     try {
+      // If image looks like an absolute path, treat it as a local OCI rootfs
+      const isLocalPath = config.image.startsWith('/')
       const box = await this.client.createBox({
-        image: config.image,
+        ...(isLocalPath ? { rootfs_path: config.image } : { image: config.image }),
         cpu: config.resources?.cpu,
         memory_mb: config.resources?.memory,
         disk_size_gb: config.resources?.disk,

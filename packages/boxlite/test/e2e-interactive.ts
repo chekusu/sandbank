@@ -3,7 +3,7 @@
  * 交互式 E2E 测试: 单进程，从文件读取 auth code，无超时限制
  *
  * 流程:
- *   1. 创建沙箱 + 安装 Claude Code + 启动 OAuth 登录
+ *   1. 创建沙箱 (codebox:latest，预装 Claude Code) + 启动 OAuth 登录
  *   2. 复制 URL 到剪贴板，等待 auth code 写入 /tmp/sandbank-host-auth-code
  *   3. 发送 code → 等待凭证
  *   4. 注入 hooks → 运行 Claude Code → 验证事件
@@ -18,6 +18,7 @@ import { execSync } from 'node:child_process'
 const HOST_CODE_FILE = '/tmp/sandbank-host-auth-code'
 const PYTHON_PATH = process.env['PYTHON_PATH'] ?? '/tmp/boxlite-venv/bin/python3'
 const BOXLITE_HOME = '/tmp/sandbank-e2e-boxlite'
+const SANDBOX_IMAGE = process.env['SANDBOX_IMAGE'] ?? 'codebox:latest'
 // 跳过 Phase 2（仅测试登录）
 const LOGIN_ONLY = process.argv.includes('--login-only')
 
@@ -49,9 +50,9 @@ async function main() {
   try {
     // ═══ Phase 1: 创建沙箱 + 安装 Claude Code + OAuth 登录 ═══
 
-    log('PHASE1', 'Creating sandbox (node:22-slim, 5GB disk)...')
+    log('PHASE1', `Creating sandbox (${SANDBOX_IMAGE}, 5GB disk)...`)
     const sandbox = await provider.create({
-      image: 'node:22-slim',
+      image: SANDBOX_IMAGE,
       resources: { disk: 5 },
       timeout: 120,
       user: 'sandbank',
@@ -60,8 +61,6 @@ async function main() {
     log('PHASE1', `Sandbox: ${sandboxId}`)
     log('PHASE1', `User: ${sandbox.user?.name} (home: ${sandbox.user?.home})`)
 
-    log('PHASE1', 'Installing Claude Code (as root)...')
-    await sandbox.exec('npm install -g @anthropic-ai/claude-code 2>&1 | tail -3', { timeout: 300_000, asRoot: true })
     const ver = await sandbox.exec('claude --version 2>&1')
     log('PHASE1', `Claude Code: ${ver.stdout.trim()}`)
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env npx tsx
 /**
- * Phase 1: 创建沙箱 → 安装 Claude Code → 运行 claude login → 输出 OAuth URL
+ * Phase 1: 创建沙箱 (codebox:latest) → 运行 claude login → 输出 OAuth URL
  * 将 sandbox ID 写入 /tmp/sandbank-e2e-sandbox-id.txt 供 Phase 2 使用
  */
 import { createProvider } from '@sandbank.dev/core'
@@ -14,6 +14,7 @@ function log(label: string, ...args: unknown[]) {
 async function main() {
   const pythonPath = process.env['PYTHON_PATH'] ?? '/tmp/boxlite-venv/bin/python3'
   const boxliteHome = '/tmp/sandbank-e2e-boxlite'
+  const image = process.env['SANDBOX_IMAGE'] ?? 'codebox:latest'
 
   const adapter = new BoxLiteAdapter({ mode: 'local', pythonPath, boxliteHome })
   const provider = createProvider(adapter)
@@ -21,29 +22,23 @@ async function main() {
   let sandboxId: string | undefined
 
   try {
-    log('INIT', 'Creating sandbox (node:22-slim, 5GB disk)...')
+    log('INIT', `Creating sandbox (${image}, 5GB disk)...`)
     const sandbox = await provider.create({
-      image: 'node:22-slim',
+      image,
       resources: { disk: 5 },
       timeout: 120,
+      user: 'sandbank',
     })
     sandboxId = sandbox.id
     log('INIT', `Sandbox created: ${sandboxId}`)
+    log('INIT', `User: ${sandbox.user?.name} (home: ${sandbox.user?.home})`)
 
     // 保存 sandbox ID
     const fs = await import('node:fs')
     fs.writeFileSync('/tmp/sandbank-e2e-sandbox-id.txt', sandboxId)
 
-    // 安装 Claude Code
-    log('INSTALL', 'Installing Claude Code (npm install -g @anthropic-ai/claude-code)...')
-    const install = await sandbox.exec(
-      'npm install -g @anthropic-ai/claude-code 2>&1 | tail -5',
-      { timeout: 300_000 },
-    )
-    log('INSTALL', install.stdout.trim())
-
     const ver = await sandbox.exec('claude --version 2>&1')
-    log('INSTALL', `Claude Code version: ${ver.stdout.trim()}`)
+    log('INIT', `Claude Code version: ${ver.stdout.trim()}`)
 
     // 运行 claude login 自动化
     log('LOGIN', 'Starting claude login automation...')
@@ -99,7 +94,7 @@ async function main() {
     log('LOGIN', 'Waiting for credentials...')
     await result.waitForCredentials(120_000)
 
-    log('LOGIN', 'Credentials received! ✓')
+    log('LOGIN', 'Credentials received!')
 
     // 写入 ~/.claude.json 跳过 onboarding（必须在 login 完成后，否则影响 login 流程）
     const home = (await sandbox.exec('echo $HOME')).stdout.trim() || '/root'
@@ -110,9 +105,9 @@ async function main() {
     }))
     log('VERIFY', 'Wrote ~/.claude.json (skip onboarding)')
 
-    // 验证 claude 可用（--dangerously-skip-permissions 不能在 root 下使用，用 acceptEdits）
-    log('VERIFY', 'Running claude -p --permission-mode acceptEdits ...')
-    const whoami = await sandbox.exec('timeout 120 claude -p "Say hello" --permission-mode acceptEdits < /dev/null 2>&1', { timeout: 180_000 })
+    // 验证 claude 可用（非 root 用户可用 --dangerously-skip-permissions）
+    log('VERIFY', 'Running claude -p --dangerously-skip-permissions ...')
+    const whoami = await sandbox.exec('timeout 120 claude -p "Say hello" --dangerously-skip-permissions < /dev/null 2>&1', { timeout: 180_000 })
     log('VERIFY', `Claude response: ${whoami.stdout.trim().substring(0, 200)}`)
 
     console.log('')

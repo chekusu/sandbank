@@ -80,6 +80,7 @@ class Bridge:
         await self._ensure_runtime()
 
         image = params["image"]
+        rootfs = params.get("rootfs_path")
         now = datetime.now(timezone.utc).isoformat()
 
         # Normalize env/ports
@@ -92,7 +93,8 @@ class Bridge:
 
         if self._runtime == "simple_box":
             # SimpleBox uses: image, memory_mib, cpus, disk_size_gb, env, working_dir
-            sb_kwargs = {"image": image}
+            # rootfs_path overrides image when provided (local OCI layout directory)
+            sb_kwargs = {"rootfs_path": rootfs} if rootfs else {"image": image}
             if params.get("cpu") is not None:
                 sb_kwargs["cpus"] = params["cpu"]
             if params.get("memory_mb") is not None:
@@ -117,7 +119,7 @@ class Bridge:
             # Boxlite.create(BoxOptions(...), name=None)
             BoxOptions = getattr(boxlite, "BoxOptions", None)
             if BoxOptions is not None:
-                opts = BoxOptions(image=image)
+                opts = BoxOptions(rootfs_path=rootfs) if rootfs else BoxOptions(image=image)
                 if params.get("cpu") is not None:
                     opts.cpus = params["cpu"]
                 if params.get("memory_mb") is not None:
@@ -131,7 +133,7 @@ class Bridge:
                 box = await self._runtime.create(opts)
             else:
                 # Legacy fallback: pass as kwargs
-                kwargs = {"image": image}
+                kwargs = {"rootfs_path": rootfs} if rootfs else {"image": image}
                 for k in ("cpu", "memory_mb", "disk_size_gb", "working_dir"):
                     if params.get(k) is not None:
                         kwargs[k] = params[k]
@@ -216,23 +218,58 @@ class Bridge:
         if result is None:
             raise RuntimeError(f"All exec strategies failed: {'; '.join(errors)}")
 
-        # Execution object: call .wait() to get ExecResult
-        if hasattr(result, "wait") and callable(result.wait):
-            result = await result.wait()
+        stdout = ""
+        stderr = ""
+        exit_code = 0
 
-        # Extract stdout/stderr — may be str attributes (ExecResult) or methods (Execution)
-        stdout = getattr(result, "stdout", "")
-        stderr = getattr(result, "stderr", "")
-        if callable(stdout):
-            stdout = stdout()
-        if callable(stderr):
-            stderr = stderr()
+        # Execution object (Boxlite runtime API): collect stdout/stderr streams, then wait
+        if hasattr(result, "wait") and callable(result.wait):
+            async def _collect(stream_fn):
+                try:
+                    chunks = []
+                    async for chunk in stream_fn():
+                        chunks.append(str(chunk))
+                    return "".join(chunks)
+                except Exception:
+                    return ""
+
+            # Read stdout/stderr concurrently to avoid pipe deadlocks
+            tasks = []
+            has_stdout = hasattr(result, "stdout") and callable(result.stdout)
+            has_stderr = hasattr(result, "stderr") and callable(result.stderr)
+            if has_stdout:
+                tasks.append(asyncio.create_task(_collect(result.stdout)))
+            if has_stderr:
+                tasks.append(asyncio.create_task(_collect(result.stderr)))
+
+            if tasks:
+                collected = await asyncio.gather(*tasks)
+                idx = 0
+                if has_stdout:
+                    stdout = collected[idx]; idx += 1
+                if has_stderr:
+                    stderr = collected[idx]
+
+            exec_result = await result.wait()
+            exit_code = int(getattr(exec_result, "exit_code",
+                           getattr(exec_result, "returncode", 0)) or 0)
+        else:
+            # SimpleBox / legacy: result already has stdout/stderr as attributes
+            raw_stdout = getattr(result, "stdout", "")
+            raw_stderr = getattr(result, "stderr", "")
+            if callable(raw_stdout):
+                raw_stdout = raw_stdout()
+            if callable(raw_stderr):
+                raw_stderr = raw_stderr()
+            stdout = str(raw_stdout or "")
+            stderr = str(raw_stderr or "")
+            exit_code = int(getattr(result, "exit_code",
+                           getattr(result, "returncode", 0)) or 0)
 
         return {
-            "stdout": str(stdout or ""),
-            "stderr": str(stderr or ""),
-            "exit_code": int(getattr(result, "exit_code",
-                           getattr(result, "returncode", 0)) or 0),
+            "stdout": stdout,
+            "stderr": stderr,
+            "exit_code": exit_code,
         }
 
     async def destroy(self, box_id):

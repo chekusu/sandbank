@@ -314,6 +314,47 @@ ws.onmessage = (ev) => {
 
 > **注意：** 类型字节是 ASCII `'0'`/`'1'`（0x30/0x31），不是数字 `0`/`1`（0x00/0x01）。这是一个常见的实现错误。
 
+### 6. 自定义镜像无法使用（BoxLite 镜像管理）
+
+**症状：** 本地用 Docker/OrbStack 构建了 `codebox:latest`，但 BoxLite 拉不到。
+
+**根因：** BoxLite 有自己的镜像管理系统（OCI → ext4 rootfs），不共享 Docker/OrbStack 的镜像存储。公共镜像（如 `node:22-slim`）会从 Docker Hub 拉取，但本地构建的镜像不可见。
+
+**解决方案 1（推荐）：rootfs_path + OCI layout**
+
+将 Docker 镜像导出为 OCI layout 目录，BoxLite 直接加载本地文件，无需网络：
+
+```bash
+# 导出为 OCI layout
+mkdir -p /tmp/codebox-oci
+docker save codebox:latest | tar -xf - -C /tmp/codebox-oci
+
+# 或用 skopeo（更规范）
+skopeo copy docker-daemon:codebox:latest oci:/tmp/codebox-oci:latest
+```
+
+在代码中使用：
+
+```python
+# Python
+opts = boxlite.BoxOptions(rootfs_path='/tmp/codebox-oci')
+box = await runtime.create(opts)
+```
+
+**解决方案 2：本地 registry（macOS 不可行）**
+
+```bash
+docker run -d -p 5000:5000 --name registry registry:2
+docker tag codebox:latest localhost:5000/codebox:latest
+docker push localhost:5000/codebox:latest
+```
+
+> **macOS 上此方案不可行：** BoxLite microVM 有独立网络栈，`localhost` 指向 VM 自身。即使用宿主机 IP，macOS 的网络隔离也会阻止 VM 访问宿主机端口。Linux 上可能可行。
+
+**解决方案 3：推送到远程 registry**
+
+推送到 GHCR 或 Docker Hub，BoxLite 从远程拉取（需网络，但最可靠）。
+
 ## 调试
 
 ### 启用详细日志
