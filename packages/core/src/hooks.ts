@@ -151,10 +151,10 @@ export async function startClaudeLogin(
   const installCmd = config?.installCommand
     ?? 'apt-get update -qq && apt-get install -y -qq screen'
 
-  // 1. 确保 screen 已安装
+  // 1. 确保 screen 已安装（需 root 权限安装包）
   const checkScreen = await sandbox.exec('which screen 2>/dev/null')
   if (checkScreen.exitCode !== 0) {
-    const installResult = await sandbox.exec(installCmd, { timeout: 60_000 })
+    const installResult = await sandbox.exec(installCmd, { timeout: 60_000, asRoot: true })
     if (installResult.exitCode !== 0) {
       throw new Error(`Failed to install screen: ${installResult.stderr || installResult.stdout}`)
     }
@@ -325,6 +325,8 @@ INPUT=$(cat | tr -d '\\n')
 printf '{"ts":%d,"data":%s}\\n' "$TS" "$INPUT" >> '${eventsPath}'
 `
   await sandbox.writeFile(HANDLER_SCRIPT_PATH, script)
-  await sandbox.exec(`chmod +x '${HANDLER_SCRIPT_PATH}'`)
+  // writeFile 以 root 写入，chmod 需 root 权限
+  await sandbox.exec(`chmod +x '${HANDLER_SCRIPT_PATH}'`, { asRoot: true })
+  // events 文件由 hook handler（以沙箱用户身份）追加写入，需用户可写
   await sandbox.exec(`touch '${eventsPath}'`)
 }

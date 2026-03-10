@@ -54,12 +54,14 @@ async function main() {
       image: 'node:22-slim',
       resources: { disk: 5 },
       timeout: 120,
+      user: 'sandbank',
     })
     sandboxId = sandbox.id
     log('PHASE1', `Sandbox: ${sandboxId}`)
+    log('PHASE1', `User: ${sandbox.user?.name} (home: ${sandbox.user?.home})`)
 
-    log('PHASE1', 'Installing Claude Code...')
-    await sandbox.exec('npm install -g @anthropic-ai/claude-code 2>&1 | tail -3', { timeout: 300_000 })
+    log('PHASE1', 'Installing Claude Code (as root)...')
+    await sandbox.exec('npm install -g @anthropic-ai/claude-code 2>&1 | tail -3', { timeout: 300_000, asRoot: true })
     const ver = await sandbox.exec('claude --version 2>&1')
     log('PHASE1', `Claude Code: ${ver.stdout.trim()}`)
 
@@ -139,11 +141,10 @@ async function main() {
         log('DEBUG', `Network: ${netCheck.stdout.trim()}`)
 
         // 验证 claude 可用
-        // 注意: --dangerously-skip-permissions 不能在 root 下使用
-        // 用 --permission-mode acceptEdits 代替 (chatben 的做法)
+        // 现在以非 root 用户运行，可以用 --dangerously-skip-permissions
         log('PHASE1', 'Verifying claude (timeout 120s)...')
         const whoami = await sandbox.exec(
-          'timeout 120 claude -p "Say hello" --permission-mode acceptEdits < /dev/null 2>&1',
+          'timeout 120 claude -p "Say hello" --dangerously-skip-permissions < /dev/null 2>&1',
           { timeout: 180_000 },
         )
         log('PHASE1', `Claude says: ${whoami.stdout.trim().substring(0, 500)}`)
@@ -193,11 +194,12 @@ async function main() {
     assert(!!parsed.hooks?.PostToolUse, 'PostToolUse hook configured')
     assert(!!parsed.hooks?.Stop, 'Stop hook configured')
 
-    await sandbox.exec('mkdir -p /workspace && cd /workspace && git init 2>&1')
+    await sandbox.exec('mkdir -p /workspace && cd /workspace && git init 2>&1', { asRoot: true })
+    await sandbox.exec('chown -R sandbank:sandbank /workspace', { asRoot: true })
 
-    log('PHASE2', 'Running Claude Code (-p --permission-mode acceptEdits --max-turns 3)...')
+    log('PHASE2', 'Running Claude Code (-p --dangerously-skip-permissions --max-turns 3)...')
     const claudeResult = await sandbox.exec(
-      'cd /workspace && claude -p "Write hello world to /workspace/hello.txt" --permission-mode acceptEdits --max-turns 3 < /dev/null 2>&1',
+      'cd /workspace && claude -p "Write hello world to /workspace/hello.txt" --dangerously-skip-permissions --max-turns 3 < /dev/null 2>&1',
       { timeout: 300_000 },
     )
     log('PHASE2', `Exit code: ${claudeResult.exitCode}`)

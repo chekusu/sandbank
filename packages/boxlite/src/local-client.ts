@@ -47,7 +47,19 @@ class Bridge:
         if self._runtime is not None:
             return
 
-        # Try BoxliteRuntime (full API)
+        # Try Boxlite(Options(home_dir=...)) — the canonical API
+        Options = getattr(boxlite, "Options", None)
+        Boxlite = getattr(boxlite, "Boxlite", None)
+        if Options and Boxlite:
+            try:
+                opts = Options(home_dir=self._home)
+                rt = Boxlite(opts)
+                self._runtime = rt
+                return
+            except Exception:
+                pass
+
+        # Try legacy BoxliteRuntime / Runtime
         for attr in ("BoxliteRuntime", "Runtime", "runtime"):
             cls = getattr(boxlite, attr, None)
             if cls is None:
@@ -68,20 +80,33 @@ class Bridge:
         await self._ensure_runtime()
 
         image = params["image"]
-        kwargs = {"image": image}
-        for k in ("cpu", "memory_mb", "disk_size_gb", "env", "working_dir", "ports"):
-            if params.get(k) is not None:
-                if k == "env" and isinstance(params[k], dict):
-                    kwargs[k] = list(params[k].items())
-                elif k == "ports" and isinstance(params[k], list):
-                    kwargs[k] = [tuple(p) for p in params[k]]
-                else:
-                    kwargs[k] = params[k]
-
         now = datetime.now(timezone.utc).isoformat()
 
+        # Normalize env/ports
+        env = params.get("env")
+        if isinstance(env, dict):
+            env = list(env.items())
+        ports = params.get("ports")
+        if isinstance(ports, list):
+            ports = [tuple(p) for p in ports]
+
         if self._runtime == "simple_box":
-            sb = boxlite.SimpleBox(**kwargs)
+            # SimpleBox uses: image, memory_mib, cpus, disk_size_gb, env, working_dir
+            sb_kwargs = {"image": image}
+            if params.get("cpu") is not None:
+                sb_kwargs["cpus"] = params["cpu"]
+            if params.get("memory_mb") is not None:
+                sb_kwargs["memory_mib"] = params["memory_mb"]
+            if params.get("disk_size_gb") is not None:
+                sb_kwargs["disk_size_gb"] = params["disk_size_gb"]
+            if env is not None:
+                sb_kwargs["env"] = env
+            if params.get("working_dir") is not None:
+                sb_kwargs["working_dir"] = params["working_dir"]
+            if ports is not None:
+                sb_kwargs["ports"] = ports
+
+            sb = boxlite.SimpleBox(**sb_kwargs)
             box = await sb.__aenter__()
             box_id = str(getattr(box, "id", None)
                          or getattr(getattr(box, "_box", None), "id", None)
@@ -89,11 +114,36 @@ class Bridge:
             self._boxes[box_id] = box
             self._simple_boxes[box_id] = sb
         else:
-            # Try runtime.create / runtime.create_box
-            create_fn = getattr(self._runtime, "create", None) or getattr(self._runtime, "create_box", None)
-            if create_fn is None:
-                raise RuntimeError("boxlite runtime has no create/create_box method")
-            box = await create_fn(**kwargs)
+            # Boxlite.create(BoxOptions(...), name=None)
+            BoxOptions = getattr(boxlite, "BoxOptions", None)
+            if BoxOptions is not None:
+                opts = BoxOptions(image=image)
+                if params.get("cpu") is not None:
+                    opts.cpus = params["cpu"]
+                if params.get("memory_mb") is not None:
+                    opts.memory_mib = params["memory_mb"]
+                if params.get("disk_size_gb") is not None:
+                    opts.disk_size_gb = params["disk_size_gb"]
+                if env is not None:
+                    opts.env = env
+                if params.get("working_dir") is not None:
+                    opts.working_dir = params["working_dir"]
+                box = await self._runtime.create(opts)
+            else:
+                # Legacy fallback: pass as kwargs
+                kwargs = {"image": image}
+                for k in ("cpu", "memory_mb", "disk_size_gb", "working_dir"):
+                    if params.get(k) is not None:
+                        kwargs[k] = params[k]
+                if env is not None:
+                    kwargs["env"] = env
+                if ports is not None:
+                    kwargs["ports"] = ports
+                create_fn = getattr(self._runtime, "create", None) or getattr(self._runtime, "create_box", None)
+                if create_fn is None:
+                    raise RuntimeError("boxlite runtime has no create/create_box method")
+                box = await create_fn(**kwargs)
+
             box_id = str(box.id)
             self._boxes[box_id] = box
 
@@ -101,8 +151,8 @@ class Bridge:
             "id": box_id,
             "status": "running",
             "image": image,
-            "cpu": kwargs.get("cpu", 1),
-            "memory_mb": kwargs.get("memory_mb", 512),
+            "cpu": params.get("cpu", 1),
+            "memory_mb": params.get("memory_mb", 512),
             "created_at": now,
             "name": None,
         }
@@ -159,20 +209,28 @@ class Bridge:
         # Strategy 3: box._box.exec(cmd[0], args=cmd[1:])
         if result is None and hasattr(box, "_box"):
             try:
-                exec_obj = await box._box.exec(cmd[0], args=cmd[1:])
-                if hasattr(exec_obj, "wait"):
-                    result = await exec_obj.wait()
-                else:
-                    result = exec_obj
+                result = await box._box.exec(cmd[0], args=cmd[1:])
             except Exception as e:
                 errors.append(f"box._box.exec(...): {e}")
 
         if result is None:
             raise RuntimeError(f"All exec strategies failed: {'; '.join(errors)}")
 
+        # Execution object: call .wait() to get ExecResult
+        if hasattr(result, "wait") and callable(result.wait):
+            result = await result.wait()
+
+        # Extract stdout/stderr — may be str attributes (ExecResult) or methods (Execution)
+        stdout = getattr(result, "stdout", "")
+        stderr = getattr(result, "stderr", "")
+        if callable(stdout):
+            stdout = stdout()
+        if callable(stderr):
+            stderr = stderr()
+
         return {
-            "stdout": str(getattr(result, "stdout", "") or ""),
-            "stderr": str(getattr(result, "stderr", "") or ""),
+            "stdout": str(stdout or ""),
+            "stderr": str(stderr or ""),
             "exit_code": int(getattr(result, "exit_code",
                            getattr(result, "returncode", 0)) or 0),
         }
