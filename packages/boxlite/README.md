@@ -63,6 +63,15 @@ const { stdout } = await sandbox.exec('echo hello')
 await provider.destroy(sandbox.id)
 ```
 
+### Local OCI rootfs (skip registry pull)
+
+If `image` is an absolute path, it is treated as a local OCI layout directory:
+
+```typescript
+// Export image: skopeo copy docker-daemon:myimage:latest oci:~/.boxlite/myimage-oci:latest
+const sandbox = await provider.create({ image: '/Users/you/.boxlite/myimage-oci' })
+```
+
 ### OAuth2 authentication (remote mode)
 
 ```typescript

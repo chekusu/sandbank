@@ -6,6 +6,18 @@
 import { createProvider } from '@sandbank.dev/core'
 import { startClaudeLogin } from '@sandbank.dev/core'
 import { BoxLiteAdapter } from '@sandbank.dev/boxlite'
+import * as fs from 'node:fs'
+import { resolve, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+// Load .env (won't override existing env vars)
+const __dir = dirname(fileURLToPath(import.meta.url))
+try {
+  for (const line of fs.readFileSync(resolve(__dir, '.env'), 'utf-8').split('\n')) {
+    const m = line.match(/^(\w+)=(.*)$/)
+    if (m && !(m[1] in process.env)) process.env[m[1]] = m[2].replace(/^~/, process.env['HOME']!)
+  }
+} catch {}
 
 function log(label: string, ...args: unknown[]) {
   console.log(`\x1b[36m[${label}]\x1b[0m`, ...args)
@@ -13,7 +25,7 @@ function log(label: string, ...args: unknown[]) {
 
 async function main() {
   const pythonPath = process.env['PYTHON_PATH'] ?? '/tmp/boxlite-venv/bin/python3'
-  const boxliteHome = '/tmp/sandbank-e2e-boxlite'
+  const boxliteHome = process.env['BOXLITE_HOME'] ?? '/tmp/sandbank-e2e-boxlite'
   const image = process.env['SANDBOX_IMAGE'] ?? 'codebox:latest'
 
   const adapter = new BoxLiteAdapter({ mode: 'local', pythonPath, boxliteHome })

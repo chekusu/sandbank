@@ -326,19 +326,24 @@ ws.onmessage = (ev) => {
 
 ```bash
 # 导出为 OCI layout
-mkdir -p /tmp/codebox-oci
-docker save codebox:latest | tar -xf - -C /tmp/codebox-oci
+mkdir -p ~/.boxlite/codebox-oci
+docker save codebox:latest | tar -xf - -C ~/.boxlite/codebox-oci
 
 # 或用 skopeo（更规范）
-skopeo copy docker-daemon:codebox:latest oci:/tmp/codebox-oci:latest
+skopeo copy docker-daemon:codebox:latest oci:~/.boxlite/codebox-oci:latest
 ```
 
 在代码中使用：
 
 ```python
 # Python
-opts = boxlite.BoxOptions(rootfs_path='/tmp/codebox-oci')
+opts = boxlite.BoxOptions(rootfs_path='~/.boxlite/codebox-oci')
 box = await runtime.create(opts)
+```
+
+```typescript
+// TypeScript (Sandbank) — image 传绝对路径自动识别为 rootfs
+const sandbox = await provider.create({ image: '~/.boxlite/codebox-oci' })
 ```
 
 **解决方案 2：本地 registry（macOS 不可行）**

@@ -18,10 +18,16 @@ const provider = createProvider(
   new DaytonaAdapter({ apiKey: process.env.DAYTONA_API_KEY! })
 )
 
-// Create and use a sandbox
-const sandbox = await provider.create({ image: 'node:22' })
+// Create a sandbox with a non-root user
+const sandbox = await provider.create({
+  image: 'node:22',
+  user: 'sandbank',            // creates non-root user with sudo
+})
 const { stdout } = await sandbox.exec('node --version')
 await sandbox.writeFile('/app/index.js', 'console.log("hi")')
+
+// Run privileged commands with asRoot
+await sandbox.exec('apt-get update', { asRoot: true })
 
 // Capability detection
 const terminal = withTerminal(sandbox)

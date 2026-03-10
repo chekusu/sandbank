@@ -14,10 +14,21 @@ import { BoxLiteAdapter } from '@sandbank.dev/boxlite'
 import { createProvider, startClaudeLogin, injectClaudeHooks, readHookEvents } from '@sandbank.dev/core'
 import * as fs from 'node:fs'
 import { execSync } from 'node:child_process'
+import { resolve, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+// Load .env (won't override existing env vars)
+const __dir = dirname(fileURLToPath(import.meta.url))
+try {
+  for (const line of fs.readFileSync(resolve(__dir, '.env'), 'utf-8').split('\n')) {
+    const m = line.match(/^(\w+)=(.*)$/)
+    if (m && !(m[1] in process.env)) process.env[m[1]] = m[2].replace(/^~/, process.env['HOME']!)
+  }
+} catch {}
 
 const HOST_CODE_FILE = '/tmp/sandbank-host-auth-code'
 const PYTHON_PATH = process.env['PYTHON_PATH'] ?? '/tmp/boxlite-venv/bin/python3'
-const BOXLITE_HOME = '/tmp/sandbank-e2e-boxlite'
+const BOXLITE_HOME = process.env['BOXLITE_HOME'] ?? '/tmp/sandbank-e2e-boxlite'
 const SANDBOX_IMAGE = process.env['SANDBOX_IMAGE'] ?? 'codebox:latest'
 // 跳过 Phase 2（仅测试登录）
 const LOGIN_ONLY = process.argv.includes('--login-only')
