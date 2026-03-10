@@ -119,19 +119,24 @@ class Bridge:
             # Boxlite.create(BoxOptions(...), name=None)
             BoxOptions = getattr(boxlite, "BoxOptions", None)
             if BoxOptions is not None:
-                opts = BoxOptions(rootfs_path=rootfs) if rootfs else BoxOptions(image=image)
+                opt_kwargs = {}
+                if rootfs:
+                    opt_kwargs["rootfs_path"] = rootfs
+                else:
+                    opt_kwargs["image"] = image
                 if params.get("cpu") is not None:
-                    opts.cpus = params["cpu"]
+                    opt_kwargs["cpus"] = params["cpu"]
                 if params.get("memory_mb") is not None:
-                    opts.memory_mib = params["memory_mb"]
+                    opt_kwargs["memory_mib"] = params["memory_mb"]
                 if params.get("disk_size_gb") is not None:
-                    opts.disk_size_gb = params["disk_size_gb"]
+                    opt_kwargs["disk_size_gb"] = params["disk_size_gb"]
                 if env is not None:
-                    opts.env = env
+                    opt_kwargs["env"] = env
                 if params.get("working_dir") is not None:
-                    opts.working_dir = params["working_dir"]
+                    opt_kwargs["working_dir"] = params["working_dir"]
                 if ports is not None:
-                    opts.ports = ports
+                    opt_kwargs["ports"] = ports
+                opts = BoxOptions(**opt_kwargs)
                 box = await self._runtime.create(opts)
             else:
                 # Legacy fallback: pass as kwargs
