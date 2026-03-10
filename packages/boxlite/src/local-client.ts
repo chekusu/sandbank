@@ -79,7 +79,7 @@ class Bridge:
     async def create(self, params):
         await self._ensure_runtime()
 
-        image = params["image"]
+        image = params.get("image", "")
         rootfs = params.get("rootfs_path")
         now = datetime.now(timezone.utc).isoformat()
 
@@ -130,6 +130,8 @@ class Bridge:
                     opts.env = env
                 if params.get("working_dir") is not None:
                     opts.working_dir = params["working_dir"]
+                if ports is not None:
+                    opts.ports = ports
                 box = await self._runtime.create(opts)
             else:
                 # Legacy fallback: pass as kwargs
