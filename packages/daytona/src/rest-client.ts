@@ -75,7 +75,14 @@ export function createDaytonaRestClient(apiKey: string, apiUrl?: string): Dayton
       const res = await toolboxFetch(sandboxId, '/process/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command, cwd, timeout }),
+        // Daytona toolbox executes commands exec-style (no shell). Encode the
+        // command as base64 and pipe through bash so all shell syntax works —
+        // heredocs, pipes, &&, etc.
+        body: JSON.stringify({
+          command: `sh -c 'printf "%s" "${btoa(command)}" | base64 -d | sudo bash'`,
+          cwd,
+          timeout,
+        }),
       })
       const data = await res.json() as { exitCode: number; result?: string }
       return { exitCode: data.exitCode, stdout: data.result ?? '' }
