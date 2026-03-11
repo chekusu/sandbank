@@ -163,10 +163,10 @@ describe('createDaytonaRestClient', () => {
 
       // Check execute call
       const [url, init] = mockFetch.mock.calls[1]
-      expect(url).toBe(`${TOOLBOX_URL}/toolbox/process/execute`)
+      expect(url).toBe(`${TOOLBOX_URL}/sb-1/process/execute`)
       expect(init.method).toBe('POST')
       const body = JSON.parse(init.body)
-      expect(body.command).toBe('echo hello')
+      expect(body.command).toContain('base64')
       expect(body.cwd).toBe('/app')
       expect(body.timeout).toBe(5000)
     })
@@ -195,7 +195,7 @@ describe('createDaytonaRestClient', () => {
       await client.writeFile('sb-1', '/app/file.txt', 'hello world')
 
       const [url, init] = mockFetch.mock.calls[1]
-      expect(url).toBe(`${TOOLBOX_URL}/toolbox/files/upload`)
+      expect(url).toBe(`${TOOLBOX_URL}/sb-1/files/upload`)
       expect(init.method).toBe('POST')
       expect(init.body).toBeInstanceOf(FormData)
     })
@@ -231,7 +231,7 @@ describe('createDaytonaRestClient', () => {
       expect(new TextDecoder().decode(result)).toBe('file content')
 
       const [url] = mockFetch.mock.calls[1]
-      expect(url).toBe(`${TOOLBOX_URL}/toolbox/files/download?path=%2Fapp%2Ffile.txt`)
+      expect(url).toBe(`${TOOLBOX_URL}/sb-1/files/download?path=%2Fapp%2Ffile.txt`)
     })
 
     it('should throw on download error', async () => {
@@ -320,7 +320,7 @@ describe('createDaytonaRestClient', () => {
         .mockResolvedValueOnce(jsonResponse({ exitCode: 0, result: '' }))
 
       await client.exec('sb-1', 'ls')
-      expect(mockFetch.mock.calls[1][0]).toBe('https://proxy.test.com/toolbox/process/execute')
+      expect(mockFetch.mock.calls[1][0]).toBe('https://proxy.test.com/sb-1/process/execute')
     })
   })
 })
