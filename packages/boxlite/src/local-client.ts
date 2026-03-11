@@ -47,33 +47,21 @@ class Bridge:
         if self._runtime is not None:
             return
 
-        # Try Boxlite(Options(home_dir=...)) — the canonical API
+        # Create a Boxlite runtime for the custom home_dir, then use SimpleBox
+        # with that runtime. SimpleBox's exec is more stable for rapid consecutive
+        # calls than Boxlite.create(BoxOptions).exec().
         Options = getattr(boxlite, "Options", None)
         Boxlite = getattr(boxlite, "Boxlite", None)
         if Options and Boxlite:
             try:
                 opts = Options(home_dir=self._home)
-                rt = Boxlite(opts)
-                self._runtime = rt
-                return
+                self._boxlite_rt = Boxlite(opts)
             except Exception:
-                pass
+                self._boxlite_rt = None
+        else:
+            self._boxlite_rt = None
 
-        # Try legacy BoxliteRuntime / Runtime
-        for attr in ("BoxliteRuntime", "Runtime", "runtime"):
-            cls = getattr(boxlite, attr, None)
-            if cls is None:
-                continue
-            try:
-                rt = cls(home=self._home) if callable(cls) else cls
-                if asyncio.iscoroutinefunction(getattr(rt, "start", None)):
-                    await rt.start()
-                self._runtime = rt
-                return
-            except Exception:
-                continue
-
-        # Fallback: no runtime, use SimpleBox per box
+        # Use SimpleBox with the runtime (handles home_dir correctly)
         self._runtime = "simple_box"
 
     async def create(self, params):
@@ -108,6 +96,9 @@ class Bridge:
             if ports is not None:
                 sb_kwargs["ports"] = ports
 
+            # Pass the Boxlite runtime to SimpleBox so it uses the correct home_dir
+            if getattr(self, "_boxlite_rt", None) is not None:
+                sb_kwargs["runtime"] = self._boxlite_rt
             sb = boxlite.SimpleBox(**sb_kwargs)
             box = await sb.__aenter__()
             box_id = str(getattr(box, "id", None)
@@ -233,10 +224,13 @@ class Bridge:
         if hasattr(result, "wait") and callable(result.wait):
             async def _collect(stream_fn):
                 try:
-                    chunks = []
+                    buf = bytearray()
                     async for chunk in stream_fn():
-                        chunks.append(str(chunk))
-                    return "".join(chunks)
+                        if isinstance(chunk, (bytes, bytearray)):
+                            buf.extend(chunk)
+                        else:
+                            buf.extend(str(chunk).encode("utf-8"))
+                    return buf.decode("utf-8", errors="replace")
                 except Exception:
                     return ""
 
