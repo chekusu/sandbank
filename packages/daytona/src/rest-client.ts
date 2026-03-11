@@ -35,7 +35,7 @@ export function createDaytonaRestClient(apiKey: string, apiUrl?: string): Dayton
 
   async function toolboxFetch(sandboxId: string, path: string, options?: RequestInit): Promise<Response> {
     const toolboxUrl = await getToolboxUrl(sandboxId)
-    const res = await fetch(`${toolboxUrl}${path}`, {
+    const res = await fetch(`${toolboxUrl}/${sandboxId}${path}`, {
       ...options,
       headers: {
         'Authorization': `Bearer ${apiKey}`,
@@ -72,7 +72,7 @@ export function createDaytonaRestClient(apiKey: string, apiUrl?: string): Dayton
     },
 
     async exec(sandboxId: string, command: string, cwd?: string, timeout?: number): Promise<DaytonaExecResult> {
-      const res = await toolboxFetch(sandboxId, '/toolbox/process/execute', {
+      const res = await toolboxFetch(sandboxId, '/process/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ command, cwd, timeout }),
@@ -88,7 +88,7 @@ export function createDaytonaRestClient(apiKey: string, apiUrl?: string): Dayton
       formData.append('file', blob, path.split('/').pop() ?? 'file')
       formData.append('path', path)
 
-      await toolboxFetch(sandboxId, '/toolbox/files/upload', {
+      await toolboxFetch(sandboxId, '/files/upload', {
         method: 'POST',
         body: formData,
       })
@@ -97,7 +97,7 @@ export function createDaytonaRestClient(apiKey: string, apiUrl?: string): Dayton
     async readFile(sandboxId: string, path: string): Promise<Uint8Array> {
       const res = await toolboxFetch(
         sandboxId,
-        `/toolbox/files/download?path=${encodeURIComponent(path)}`,
+        `/files/download?path=${encodeURIComponent(path)}`,
       )
       return new Uint8Array(await res.arrayBuffer())
     },
