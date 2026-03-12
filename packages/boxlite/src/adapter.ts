@@ -192,11 +192,7 @@ export class BoxLiteAdapter implements SandboxAdapter {
     this.host = resolveHost(config)
     this.client = createClient(config)
 
-    // Local mode: snapshots not supported yet
-    const caps: Capability[] = ['exec.stream', 'terminal', 'sleep', 'port.expose']
-    if (config.mode !== 'local') {
-      caps.push('snapshot')
-    }
+    const caps: Capability[] = ['exec.stream', 'terminal', 'sleep', 'port.expose', 'snapshot']
     this.capabilities = new Set(caps)
   }
 

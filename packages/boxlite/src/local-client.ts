@@ -308,6 +308,60 @@ class Bridge:
         if box and hasattr(box, "start"):
             await box.start()
 
+    def _get_box(self, box_id):
+        box = self._boxes.get(box_id)
+        if box is None:
+            raise ValueError(f"Box not found: {box_id}")
+        # SimpleBox wraps the real Box — unwrap to get snapshot handle
+        inner = getattr(box, "_box", box)
+        return inner
+
+    async def create_snapshot(self, box_id, name):
+        inner = self._get_box(box_id)
+        snap_handle = getattr(inner, "snapshot", None)
+        if snap_handle is None:
+            raise RuntimeError("Box does not support snapshots")
+        info = await snap_handle.create(name)
+        return {
+            "id": str(getattr(info, "id", name)),
+            "box_id": box_id,
+            "name": str(getattr(info, "name", name)),
+            "created_at": int(getattr(info, "created_at", 0)),
+            "size_bytes": int(getattr(info, "size_bytes", 0)),
+            "guest_disk_bytes": int(getattr(info, "guest_disk_bytes", 0) or 0),
+            "container_disk_bytes": int(getattr(info, "container_disk_bytes", 0) or 0),
+        }
+
+    async def restore_snapshot(self, box_id, name):
+        inner = self._get_box(box_id)
+        snap_handle = getattr(inner, "snapshot", None)
+        if snap_handle is None:
+            raise RuntimeError("Box does not support snapshots")
+        await snap_handle.restore(name)
+
+    async def list_snapshots(self, box_id):
+        inner = self._get_box(box_id)
+        snap_handle = getattr(inner, "snapshot", None)
+        if snap_handle is None:
+            raise RuntimeError("Box does not support snapshots")
+        snapshots = await snap_handle.list()
+        return [{
+            "id": str(getattr(s, "id", "")),
+            "box_id": box_id,
+            "name": str(getattr(s, "name", "")),
+            "created_at": int(getattr(s, "created_at", 0)),
+            "size_bytes": int(getattr(s, "size_bytes", 0)),
+            "guest_disk_bytes": int(getattr(s, "guest_disk_bytes", 0) or 0),
+            "container_disk_bytes": int(getattr(s, "container_disk_bytes", 0) or 0),
+        } for s in snapshots]
+
+    async def delete_snapshot(self, box_id, name):
+        inner = self._get_box(box_id)
+        snap_handle = getattr(inner, "snapshot", None)
+        if snap_handle is None:
+            raise RuntimeError("Box does not support snapshots")
+        await snap_handle.remove(name)
+
     async def cleanup(self):
         for box_id in list(self._boxes.keys()):
             try:
@@ -358,6 +412,16 @@ async def main():
                 result = {}
             elif action == "stop":
                 await bridge.stop(cmd["box_id"])
+                result = {}
+            elif action == "create_snapshot":
+                result = await bridge.create_snapshot(cmd["box_id"], cmd["name"])
+            elif action == "restore_snapshot":
+                await bridge.restore_snapshot(cmd["box_id"], cmd["name"])
+                result = {}
+            elif action == "list_snapshots":
+                result = await bridge.list_snapshots(cmd["box_id"])
+            elif action == "delete_snapshot":
+                await bridge.delete_snapshot(cmd["box_id"], cmd["name"])
                 result = {}
             elif action == "ping":
                 result = {"pong": True}
@@ -639,19 +703,19 @@ export function createBoxLiteLocalClient(config: BoxLiteLocalConfig): BoxLiteCli
     },
 
     async createSnapshot(boxId: string, name: string): Promise<BoxLiteSnapshot> {
-      throw new Error('Snapshots are not yet supported in local mode')
+      return send<BoxLiteSnapshot>({ action: 'create_snapshot', box_id: boxId, name })
     },
 
     async restoreSnapshot(boxId: string, name: string): Promise<void> {
-      throw new Error('Snapshots are not yet supported in local mode')
+      await send({ action: 'restore_snapshot', box_id: boxId, name })
     },
 
     async listSnapshots(boxId: string): Promise<BoxLiteSnapshot[]> {
-      throw new Error('Snapshots are not yet supported in local mode')
+      return send<BoxLiteSnapshot[]>({ action: 'list_snapshots', box_id: boxId })
     },
 
     async deleteSnapshot(boxId: string, name: string): Promise<void> {
-      throw new Error('Snapshots are not yet supported in local mode')
+      await send({ action: 'delete_snapshot', box_id: boxId, name })
     },
 
     async dispose(): Promise<void> {

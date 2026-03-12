@@ -603,9 +603,9 @@ describe('BoxLiteAdapter', () => {
 
   // 17. Local mode
   describe('local mode', () => {
-    it('should not include snapshot in capabilities', () => {
+    it('should include snapshot in capabilities', () => {
       const adapter = new BoxLiteAdapter({ mode: 'local' })
-      expect(adapter.capabilities.has('snapshot')).toBe(false)
+      expect(adapter.capabilities.has('snapshot')).toBe(true)
       expect(adapter.capabilities.has('exec.stream' as never)).toBe(true)
       expect(adapter.capabilities.has('terminal' as never)).toBe(true)
       expect(adapter.capabilities.has('sleep' as never)).toBe(true)

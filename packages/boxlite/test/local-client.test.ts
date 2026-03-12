@@ -476,35 +476,43 @@ describe('BoxLiteLocalClient', () => {
     })
   })
 
-  // --- Snapshot methods (should all throw) ---
+  // --- Snapshot methods ---
 
-  describe('snapshots (not supported in local mode)', () => {
-    it('createSnapshot should throw', async () => {
-      const client = createClient()
-      await expect(client.createSnapshot('box_123', 'snap-1')).rejects.toThrow(
-        'Snapshots are not yet supported in local mode',
-      )
+  describe('snapshots', () => {
+    it('createSnapshot should send create_snapshot action', async () => {
+      const { client, proc } = await createReadyClient()
+      const mockSnap = { id: 's-1', box_id: 'box_123', name: 'snap-1', created_at: 1000, size_bytes: 500 }
+      proc.autoRespond(mockSnap)
+
+      const result = await client.createSnapshot('box_123', 'snap-1')
+      expect(result).toEqual(mockSnap)
+      expect(proc.sentCommands.at(-1)).toMatchObject({ action: 'create_snapshot', box_id: 'box_123', name: 'snap-1' })
     })
 
-    it('restoreSnapshot should throw', async () => {
-      const client = createClient()
-      await expect(client.restoreSnapshot('box_123', 'snap-1')).rejects.toThrow(
-        'Snapshots are not yet supported in local mode',
-      )
+    it('restoreSnapshot should send restore_snapshot action', async () => {
+      const { client, proc } = await createReadyClient()
+      proc.autoRespond({})
+
+      await client.restoreSnapshot('box_123', 'snap-1')
+      expect(proc.sentCommands.at(-1)).toMatchObject({ action: 'restore_snapshot', box_id: 'box_123', name: 'snap-1' })
     })
 
-    it('listSnapshots should throw', async () => {
-      const client = createClient()
-      await expect(client.listSnapshots('box_123')).rejects.toThrow(
-        'Snapshots are not yet supported in local mode',
-      )
+    it('listSnapshots should send list_snapshots action', async () => {
+      const { client, proc } = await createReadyClient()
+      const mockList = [{ id: 's-1', box_id: 'box_123', name: 'snap-1', created_at: 1000, size_bytes: 500 }]
+      proc.autoRespond(mockList)
+
+      const result = await client.listSnapshots('box_123')
+      expect(result).toEqual(mockList)
+      expect(proc.sentCommands.at(-1)).toMatchObject({ action: 'list_snapshots', box_id: 'box_123' })
     })
 
-    it('deleteSnapshot should throw', async () => {
-      const client = createClient()
-      await expect(client.deleteSnapshot('box_123', 'snap-1')).rejects.toThrow(
-        'Snapshots are not yet supported in local mode',
-      )
+    it('deleteSnapshot should send delete_snapshot action', async () => {
+      const { client, proc } = await createReadyClient()
+      proc.autoRespond({})
+
+      await client.deleteSnapshot('box_123', 'snap-1')
+      expect(proc.sentCommands.at(-1)).toMatchObject({ action: 'delete_snapshot', box_id: 'box_123', name: 'snap-1' })
     })
   })
 
