@@ -96,6 +96,9 @@ class Bridge:
             if ports is not None:
                 sb_kwargs["ports"] = ports
 
+            # Disable auto_remove so runtime.get() works after stop (needed for snapshot restore)
+            sb_kwargs["auto_remove"] = params.get("auto_remove", False)
+
             # Pass the Boxlite runtime to SimpleBox so it uses the correct home_dir
             if getattr(self, "_boxlite_rt", None) is not None:
                 sb_kwargs["runtime"] = self._boxlite_rt
@@ -317,15 +320,42 @@ class Bridge:
         return inner
 
     async def create_snapshot(self, box_id, name):
+        # boxlite snapshot uses fork_qcow2 (rename + COW child). If QEMU is
+        # running, its FD still points to the renamed inode, so post-snapshot
+        # writes corrupt the snapshot file. Must stop → snapshot → restart.
         inner = self._get_box(box_id)
-        snap_handle = getattr(inner, "snapshot", None)
+        await inner.stop()
+
+        rt = getattr(self, "_boxlite_rt", None)
+        if rt is None:
+            raise RuntimeError("Cannot create snapshot: no Boxlite runtime")
+        fresh = await rt.get(box_id)
+        if fresh is None:
+            raise RuntimeError(f"Cannot get fresh handle for box {box_id}")
+        snap_handle = getattr(fresh, "snapshot", None)
         if snap_handle is None:
-            raise RuntimeError("Box does not support snapshots")
-        info = await snap_handle.create(name)
+            raise RuntimeError("Fresh handle has no snapshot support")
+
+        info = await snap_handle.create(name=name)
+        snap_name = str(getattr(info, "name", name))
+
+        # Restart the VM with the new COW child disk
+        await fresh.__aenter__()
+        # Update SimpleBox/Box internal references
+        old_sb = self._simple_boxes.get(box_id)
+        old_box = self._boxes.get(box_id)
+        if old_sb and hasattr(old_sb, "_box"):
+            old_sb._box = fresh
+            old_sb._started = True
+        if old_box and hasattr(old_box, "_box"):
+            old_box._box = fresh
+        else:
+            self._boxes[box_id] = fresh
+
         return {
-            "id": str(getattr(info, "id", name)),
+            "id": str(getattr(info, "id", snap_name)),
             "box_id": box_id,
-            "name": str(getattr(info, "name", name)),
+            "name": snap_name,
             "created_at": int(getattr(info, "created_at", 0)),
             "size_bytes": int(getattr(info, "size_bytes", 0)),
             "guest_disk_bytes": int(getattr(info, "guest_disk_bytes", 0) or 0),
@@ -333,11 +363,35 @@ class Bridge:
         }
 
     async def restore_snapshot(self, box_id, name):
+        # Same stop → fresh handle pattern as create_snapshot.
+        # stop() also invalidates the LiteBox handle (cancels shutdown_token).
         inner = self._get_box(box_id)
-        snap_handle = getattr(inner, "snapshot", None)
-        if snap_handle is None:
-            raise RuntimeError("Box does not support snapshots")
-        await snap_handle.restore(name)
+        await inner.stop()
+
+        rt = getattr(self, "_boxlite_rt", None)
+        if rt is None:
+            raise RuntimeError("Cannot restore snapshot: no Boxlite runtime")
+        fresh = await rt.get(box_id)
+        if fresh is None:
+            raise RuntimeError(f"Cannot get fresh handle for box {box_id}")
+        fresh_snap = getattr(fresh, "snapshot", None)
+        if fresh_snap is None:
+            raise RuntimeError("Fresh handle has no snapshot support")
+
+        await fresh_snap.restore(name)
+
+        # Restart with the restored disk
+        await fresh.__aenter__()
+        # Update SimpleBox/Box internal references
+        old_sb = self._simple_boxes.get(box_id)
+        old_box = self._boxes.get(box_id)
+        if old_sb and hasattr(old_sb, "_box"):
+            old_sb._box = fresh
+            old_sb._started = True
+        if old_box and hasattr(old_box, "_box"):
+            old_box._box = fresh
+        else:
+            self._boxes[box_id] = fresh
 
     async def list_snapshots(self, box_id):
         inner = self._get_box(box_id)
