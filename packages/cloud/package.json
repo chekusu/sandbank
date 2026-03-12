@@ -1,0 +1,46 @@
+{
+  "name": "@sandbank.dev/cloud",
+  "version": "0.1.0",
+  "description": "Sandbank Cloud adapter with x402 payment support",
+  "license": "MIT",
+  "type": "module",
+  "homepage": "https://sandbank.dev/cloud",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chekusu/sandbank.git",
+    "directory": "packages/cloud"
+  },
+  "keywords": [
+    "sandbox",
+    "ai-agent",
+    "sandbank-cloud",
+    "bare-metal",
+    "kvm",
+    "x402",
+    "usdc"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@sandbank.dev/core": "workspace:*",
+    "@x402/core": "^2.6.0",
+    "@x402/evm": "^2.6.0",
+    "viem": "^2.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.0",
+    "typescript": "^5.7.3"
+  }
+}

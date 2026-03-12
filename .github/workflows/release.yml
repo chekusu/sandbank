@@ -25,7 +25,7 @@ jobs:
       - name: Resolve workspace references
         run: |
           VERSION=$(node -p "require('./packages/core/package.json').version")
-          for pkg in agent boxlite cloudflare daytona db9 flyio relay sandbank skills; do
+          for pkg in agent boxlite cloud cloudflare daytona db9 flyio relay sandbank skills; do
             sed -i "s|\"workspace:\\*\"|\"\^$VERSION\"|g" packages/$pkg/package.json
           done
 
@@ -54,6 +54,10 @@ jobs:
       - name: Publish @sandbank.dev/flyio
         run: npm publish --provenance --access public || true
         working-directory: packages/flyio
+
+      - name: Publish @sandbank.dev/cloud
+        run: npm publish --provenance --access public || true
+        working-directory: packages/cloud
 
       - name: Publish @sandbank.dev/cloudflare
         run: npm publish --provenance --access public || true

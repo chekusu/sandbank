@@ -8,6 +8,7 @@ export default defineConfig({
       '@sandbank.dev/relay': resolve(__dirname, 'packages/relay/src/index.ts'),
       '@sandbank.dev/agent': resolve(__dirname, 'packages/agent/src/index.ts'),
       '@sandbank.dev/boxlite': resolve(__dirname, 'packages/boxlite/src/index.ts'),
+      '@sandbank.dev/cloud': resolve(__dirname, 'packages/cloud/src/index.ts'),
     },
   },
   test: {
