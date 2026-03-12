@@ -121,7 +121,7 @@ export class FlyioAdapter implements SandboxAdapter {
   async createSandbox(config: CreateConfig): Promise<AdapterSandbox> {
     try {
       const machine = await this.client.createMachine({
-        image: config.image,
+        image: config.image ?? 'ubuntu:24.04',
         region: config.region,
         env: config.env,
         guest: {

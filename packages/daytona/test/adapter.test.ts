@@ -140,6 +140,9 @@ describe('DaytonaAdapter', () => {
         autoDeleteInterval: 30,
         target: 'us',
         timeout: 60,
+        public: true,
+        class: undefined,
+        snapshot: undefined,
       })
     })
 
