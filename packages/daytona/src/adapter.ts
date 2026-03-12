@@ -17,6 +17,7 @@ import { SandboxNotFoundError, ProviderError } from '@sandbank.dev/core'
 import type {
   DaytonaAdapterConfig,
   DaytonaClient,
+  DaytonaRestConfig,
   DaytonaSandboxData,
   DaytonaSDKConfig,
 } from './types.js'
@@ -186,6 +187,9 @@ export class DaytonaAdapter implements SandboxAdapter {
         autoDeleteInterval: config.autoDestroyMinutes,
         target: (this.config as DaytonaSDKConfig).target,
         timeout: config.timeout,
+        public: true, // Ports must be publicly accessible (terminal WS + preview iframe)
+        class: (this.config as DaytonaRestConfig).sandboxClass,
+        snapshot: (this.config as DaytonaRestConfig).snapshot,
       })
       return wrapSandboxData(client, data)
     } catch (err) {

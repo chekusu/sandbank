@@ -13,6 +13,10 @@ export interface DaytonaRestConfig {
   mode: 'rest'
   apiKey: string
   apiUrl?: string // Control Plane, default: 'https://app.daytona.io/api'
+  /** Default sandbox class: 'small' | 'medium' | 'large' */
+  sandboxClass?: string
+  /** Default snapshot name (built via `daytona snapshot create`). Overrides image. */
+  snapshot?: string
 }
 
 /** Daytona adapter configuration — SDK (Node.js) or REST (universal) */
@@ -46,6 +50,12 @@ export interface DaytonaCreateParams {
   autoDeleteInterval?: number
   target?: string
   timeout?: number
+  /** Make sandbox ports publicly accessible (no Daytona auth on preview/terminal URLs). */
+  public?: boolean
+  /** Preset class: 'small' | 'medium' | 'large' (overrides resources). */
+  class?: string
+  /** Custom snapshot name (built via `daytona snapshot create`). Overrides image. */
+  snapshot?: string
 }
 
 export interface DaytonaSandboxData {

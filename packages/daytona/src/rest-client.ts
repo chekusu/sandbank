@@ -72,14 +72,20 @@ export function createDaytonaRestClient(apiKey: string, apiUrl?: string): Dayton
     },
 
     async exec(sandboxId: string, command: string, cwd?: string, timeout?: number): Promise<DaytonaExecResult> {
+      // Daytona toolbox executes commands exec-style (no shell). Encode the
+      // command as base64 and pipe through bash so all shell syntax works —
+      // heredocs, pipes, &&, etc. Use TextEncoder for UTF-8 safety (btoa
+      // only handles Latin1 and would throw on Unicode chars).
+      const bytes = new TextEncoder().encode(command)
+      let b64 = ''
+      for (let i = 0; i < bytes.length; i++) b64 += String.fromCharCode(bytes[i]!)
+      b64 = btoa(b64)
+
       const res = await toolboxFetch(sandboxId, '/process/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // Daytona toolbox executes commands exec-style (no shell). Encode the
-        // command as base64 and pipe through bash so all shell syntax works —
-        // heredocs, pipes, &&, etc.
         body: JSON.stringify({
-          command: `sh -c 'printf "%s" "${btoa(command)}" | base64 -d | sudo bash'`,
+          command: `sh -c 'printf "%s" "${b64}" | base64 -d | sudo bash'`,
           cwd,
           timeout,
         }),

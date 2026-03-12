@@ -28,8 +28,8 @@ export interface SkillDefinition {
 }
 
 export interface CreateConfig {
-  /** 容器镜像（如 'node:22-slim', 'ubuntu:24.04'） */
-  image: string
+  /** 容器镜像（如 'node:22-slim', 'ubuntu:24.04'）。使用 snapshot 时可省略。 */
+  image?: string
 
   /** 环境变量注入 */
   env?: Record<string, string>
