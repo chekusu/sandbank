@@ -58,12 +58,12 @@ describe('createX402Fetch', () => {
       await expect(x402Fetch('/boxes')).rejects.toThrow('500')
     })
 
-    it('handles empty response bodies', async () => {
+    it('returns undefined for empty response bodies (e.g. DELETE)', async () => {
       mockFetch.mockResolvedValueOnce(new Response('', { status: 200 }))
 
       const { x402Fetch } = createX402Fetch({ apiToken: 'tok' })
       const result = await x402Fetch('/boxes/x')
-      expect(result).toEqual({})
+      expect(result).toBeUndefined()
     })
   })
 

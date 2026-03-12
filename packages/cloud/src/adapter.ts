@@ -13,16 +13,13 @@ import { SandboxNotFoundError, ProviderError } from '@sandbank.dev/core'
 import { createX402Fetch } from './x402-fetch.js'
 import type { SandbankCloudConfig, CloudBox, CloudExecResult } from './types.js'
 
+const KNOWN_STATES: Set<string> = new Set(['creating', 'running', 'stopped', 'error', 'terminated'])
+
 function mapState(status: string): SandboxState {
-  switch (status) {
-    case 'running':
-      return 'running'
-    case 'stopped':
-    case 'terminated':
-      return 'stopped'
-    default:
-      return 'error'
-  }
+  if (status === 'terminated') return 'stopped'
+  if (KNOWN_STATES.has(status)) return status as SandboxState
+  // Unknown states (e.g. future "paused") — pass through as-is, let core handle it
+  return status as SandboxState
 }
 
 function isNotFound(err: unknown): boolean {

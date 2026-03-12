@@ -215,10 +215,10 @@ describe('state mapping', () => {
     expect(sandbox.state).toBe('stopped')
   })
 
-  it('maps unknown to error', async () => {
-    mockFetch.mockResolvedValueOnce(jsonResponse({ ...MOCK_BOX, status: 'borked' }))
+  it('passes through unknown states as-is', async () => {
+    mockFetch.mockResolvedValueOnce(jsonResponse({ ...MOCK_BOX, status: 'paused' }))
     const adapter = new SandbankCloudAdapter({ apiToken: 'tok' })
     const sandbox = await adapter.getSandbox('x')
-    expect(sandbox.state).toBe('error')
+    expect(sandbox.state).toBe('paused')
   })
 })

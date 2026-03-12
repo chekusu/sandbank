@@ -49,7 +49,7 @@ export function createX402Fetch(config: SandbankCloudConfig) {
         await response.clone().json().catch(() => undefined),
       )
 
-      // Try hooks first (e.g., cached tokens)
+      // Try hooks first (e.g., cached tokens) — if they succeed, return; if not, fall through to payment
       const hookHeaders = await httpClient.handlePaymentRequired(paymentRequired)
       if (hookHeaders) {
         const retryResp = await fetch(url, {
@@ -58,8 +58,12 @@ export function createX402Fetch(config: SandbankCloudConfig) {
         })
         if (retryResp.ok) {
           const text = await retryResp.text()
-          return text ? JSON.parse(text) : ({} as T)
+          if (!text) throw new Error('Sandbank Cloud: empty response after x402 payment')
+          return JSON.parse(text) as T
         }
+        // Hook payment was rejected — don't create a second payment, throw immediately
+        const body = await retryResp.text()
+        throw new Error(`Sandbank Cloud API error ${retryResp.status} (after hook payment): ${body}`)
       }
 
       // Create payment payload and retry
@@ -77,7 +81,8 @@ export function createX402Fetch(config: SandbankCloudConfig) {
       }
 
       const text = await paidResponse.text()
-      return text ? JSON.parse(text) : ({} as T)
+      if (!text) throw new Error('Sandbank Cloud: empty response after x402 payment')
+      return JSON.parse(text) as T
     }
 
     if (response.status === 402) {
@@ -92,7 +97,11 @@ export function createX402Fetch(config: SandbankCloudConfig) {
     }
 
     const text = await response.text()
-    return text ? JSON.parse(text) : ({} as T)
+    if (!text) {
+      // Only DELETE returns empty bodies legitimately
+      return undefined as T
+    }
+    return JSON.parse(text) as T
   }
 
   async function x402FetchRaw(
@@ -105,6 +114,10 @@ export function createX402Fetch(config: SandbankCloudConfig) {
     }
     if (apiToken) {
       headers['Authorization'] = `Bearer ${apiToken}`
+    }
+    // Default to JSON content type if body is present and no Content-Type set
+    if (options.body && !headers['Content-Type']) {
+      headers['Content-Type'] = 'application/json'
     }
     return fetch(url, { ...options, headers })
   }
