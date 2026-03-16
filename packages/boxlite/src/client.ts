@@ -268,5 +268,12 @@ export function createBoxLiteRestClient(config: BoxLiteRemoteConfig): BoxLiteCli
         method: 'DELETE',
       })
     },
+
+    async cloneBox(boxId: string, name?: string): Promise<BoxLiteBox> {
+      return request<BoxLiteBox>(`/boxes/${boxId}/clone`, {
+        method: 'POST',
+        body: JSON.stringify(name ? { name } : {}),
+      })
+    },
   }
 }
