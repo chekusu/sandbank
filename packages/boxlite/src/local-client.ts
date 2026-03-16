@@ -416,6 +416,23 @@ class Bridge:
             raise RuntimeError("Box does not support snapshots")
         await snap_handle.remove(name)
 
+    async def clone_box(self, box_id, name=None):
+        inner = self._get_box(box_id)
+        from boxlite import CloneOptions
+        cloned = await inner.clone_box(CloneOptions(), name)
+        cloned_id = cloned.id()
+        self._boxes[cloned_id] = cloned
+        info = cloned.info()
+        return {
+            "id": cloned_id,
+            "name": info.name if hasattr(info, "name") else name,
+            "status": str(info.state) if hasattr(info, "state") else "stopped",
+            "image": str(info.image) if hasattr(info, "image") else "",
+            "cpu": int(info.cpus) if hasattr(info, "cpus") else 0,
+            "memory_mb": int(info.memory_mib) if hasattr(info, "memory_mib") else 0,
+            "created_at": "",
+        }
+
     async def cleanup(self):
         for box_id in list(self._boxes.keys()):
             try:
@@ -477,6 +494,8 @@ async def main():
             elif action == "delete_snapshot":
                 await bridge.delete_snapshot(cmd["box_id"], cmd["name"])
                 result = {}
+            elif action == "clone":
+                result = await bridge.clone_box(cmd["box_id"], cmd.get("name"))
             elif action == "ping":
                 result = {"pong": True}
             else:
@@ -770,6 +789,10 @@ export function createBoxLiteLocalClient(config: BoxLiteLocalConfig): BoxLiteCli
 
     async deleteSnapshot(boxId: string, name: string): Promise<void> {
       await send({ action: 'delete_snapshot', box_id: boxId, name })
+    },
+
+    async cloneBox(boxId: string, name?: string): Promise<BoxLiteBox> {
+      return send<BoxLiteBox>({ action: 'clone', box_id: boxId, ...(name ? { name } : {}) })
     },
 
     async dispose(): Promise<void> {
