@@ -44,6 +44,7 @@ export interface BoxLiteClient {
   restoreSnapshot(boxId: string, name: string): Promise<void>
   listSnapshots(boxId: string): Promise<BoxLiteSnapshot[]>
   deleteSnapshot(boxId: string, name: string): Promise<void>
+  cloneBox(boxId: string, name?: string): Promise<BoxLiteBox>
   /** Dispose of the client (cleanup subprocess, etc.) */
   dispose?(): Promise<void>
 }
