@@ -74,6 +74,15 @@ describe('SessionStore', () => {
     expect(() => store.registerSandbox('missing', 'x', 'y')).toThrow('Session not found')
   })
 
+  it('should enforce maxSandboxesPerSession limit', () => {
+    const store = createStore({ maxSandboxesPerSession: 2 })
+    store.createSession('s1')
+    store.registerSandbox('s1', 'a', 'sb-a')
+    store.registerSandbox('s1', 'b', 'sb-b')
+
+    expect(() => store.registerSandbox('s1', 'c', 'sb-c')).toThrow('Max sandboxes per session')
+  })
+
   describe('message routing', () => {
     it('should enqueue and drain messages', () => {
       const store = createStore()
@@ -319,6 +328,89 @@ describe('SessionStore', () => {
     })
   })
 
+  describe('unregisterSandbox', () => {
+    it('should remove sandbox entry', () => {
+      const store = createStore()
+      store.createSession('s1')
+      store.registerSandbox('s1', 'backend', 'sb-1')
+
+      store.unregisterSandbox('s1', 'backend')
+
+      const session = store.getSession('s1')!
+      expect(session.sandboxes.has('backend')).toBe(false)
+    })
+
+    it('should clean message queue', () => {
+      const store = createStore()
+      const session = store.createSession('s1')
+      store.registerSandbox('s1', 'backend', 'sb-1')
+
+      store.enqueueMessage(session, 'backend', {
+        from: 'orchestrator', to: 'backend',
+        type: 'task', payload: null, priority: 'normal',
+        timestamp: new Date().toISOString(),
+      })
+
+      store.unregisterSandbox('s1', 'backend')
+      expect(session.messageQueues.has('backend')).toBe(false)
+    })
+
+    it('should resolve poll waiters with empty array', async () => {
+      const store = createStore()
+      const session = store.createSession('s1')
+      store.registerSandbox('s1', 'backend', 'sb-1')
+
+      const promise = store.waitForMessages(session, 'backend', 5000, 100)
+      store.unregisterSandbox('s1', 'backend')
+
+      const msgs = await promise
+      expect(msgs).toHaveLength(0)
+      expect(session.pollWaiters.has('backend')).toBe(false)
+    })
+
+    it('should disconnect WS client for that sandbox', () => {
+      const store = createStore()
+      const session = store.createSession('s1')
+      store.registerSandbox('s1', 'backend', 'sb-1')
+
+      const closeFn = vi.fn()
+      session.clients.add({
+        ws: { readyState: 1, OPEN: 1, close: closeFn, send: vi.fn() } as any,
+        sessionId: 's1',
+        sandboxName: 'backend',
+        role: 'agent',
+      })
+      // Other sandbox client should not be affected
+      const otherCloseFn = vi.fn()
+      session.clients.add({
+        ws: { readyState: 1, OPEN: 1, close: otherCloseFn, send: vi.fn() } as any,
+        sessionId: 's1',
+        sandboxName: 'frontend',
+        role: 'agent',
+      })
+
+      store.unregisterSandbox('s1', 'backend')
+
+      expect(closeFn).toHaveBeenCalledWith(1000, 'sandbox unregistered')
+      expect(otherCloseFn).not.toHaveBeenCalled()
+    })
+
+    it('should be idempotent for missing sandbox', () => {
+      const store = createStore()
+      store.createSession('s1')
+
+      // Should not throw
+      expect(() => store.unregisterSandbox('s1', 'nonexistent')).not.toThrow()
+    })
+
+    it('should be idempotent for missing session', () => {
+      const store = createStore()
+
+      // Should not throw
+      expect(() => store.unregisterSandbox('missing', 'backend')).not.toThrow()
+    })
+  })
+
   describe('message queue limits', () => {
     it('should drop oldest normal message when queue is full', () => {
       const store = createStore({ maxQueueSize: 3 })
@@ -376,6 +468,132 @@ describe('SessionStore', () => {
       // steer should be first after drain sorting
       expect(msgs[0]!.type).toBe('steer-msg')
       expect(msgs[0]!.priority).toBe('steer')
+    })
+  })
+
+  describe('WS push dequeue (Phase 2)', () => {
+    it('should remove message from queue after successful WS push', () => {
+      const store = createStore()
+      const session = store.createSession('s1')
+      store.registerSandbox('s1', 'backend', 'sb-1')
+
+      // Add a connected WS client for 'backend'
+      session.clients.add({
+        ws: { readyState: 1, OPEN: 1, close: vi.fn(), send: vi.fn() } as any,
+        sessionId: 's1',
+        sandboxName: 'backend',
+        role: 'agent',
+      })
+
+      store.enqueueMessage(session, 'backend', {
+        from: 'orchestrator', to: 'backend',
+        type: 'task', payload: null, priority: 'normal',
+        timestamp: new Date().toISOString(),
+      })
+
+      // Queue should be empty — message was pushed via WS and removed
+      const msgs = store.drainQueue(session, 'backend')
+      expect(msgs).toHaveLength(0)
+    })
+
+    it('should keep message in queue when no WS client is online', () => {
+      const store = createStore()
+      const session = store.createSession('s1')
+      store.registerSandbox('s1', 'backend', 'sb-1')
+
+      // No WS client connected
+      store.enqueueMessage(session, 'backend', {
+        from: 'orchestrator', to: 'backend',
+        type: 'task', payload: null, priority: 'normal',
+        timestamp: new Date().toISOString(),
+      })
+
+      // Message should remain for polling
+      const msgs = store.drainQueue(session, 'backend')
+      expect(msgs).toHaveLength(1)
+    })
+  })
+
+  describe('orchestrator durable queue (Phase 3)', () => {
+    it('should queue message for orchestrator when offline', () => {
+      const store = createStore()
+      const session = store.createSession('s1')
+      store.registerSandbox('s1', 'backend', 'sb-1')
+
+      // No orchestrator connected — send from sandbox to orchestrator
+      store.enqueueMessage(session, 'orchestrator-target', {
+        from: 'backend', to: 'orchestrator',
+        type: 'browser.open', payload: { url: 'https://example.com' }, priority: 'normal',
+        timestamp: new Date().toISOString(),
+      })
+
+      // Message should be in orchestratorQueue
+      expect(session.orchestratorQueue).toHaveLength(1)
+      expect(session.orchestratorQueue[0]!.type).toBe('browser.open')
+    })
+
+    it('should dequeue orchestrator message after successful WS push', () => {
+      const store = createStore()
+      const session = store.createSession('s1')
+      store.registerSandbox('s1', 'backend', 'sb-1')
+
+      // Connect orchestrator
+      session.clients.add({
+        ws: { readyState: 1, OPEN: 1, close: vi.fn(), send: vi.fn() } as any,
+        sessionId: 's1',
+        sandboxName: null,
+        role: 'orchestrator',
+      })
+
+      store.enqueueMessage(session, 'orchestrator-target', {
+        from: 'backend', to: 'orchestrator',
+        type: 'browser.open', payload: null, priority: 'normal',
+        timestamp: new Date().toISOString(),
+      })
+
+      // Queue should be empty — message was pushed and removed
+      expect(session.orchestratorQueue).toHaveLength(0)
+    })
+
+    it('should allow orchestrator to pull messages via drainOrchestratorQueue', () => {
+      const store = createStore()
+      const session = store.createSession('s1')
+
+      // Manually push to orchestrator queue (simulating offline accumulation)
+      session.orchestratorQueue.push({
+        from: 'backend', to: 'orchestrator',
+        type: 'browser.open', payload: null, priority: 'normal',
+        timestamp: new Date().toISOString(),
+      })
+      session.orchestratorQueue.push({
+        from: 'backend', to: 'orchestrator',
+        type: 'browser.click', payload: null, priority: 'normal',
+        timestamp: new Date().toISOString(),
+      })
+
+      const msgs = store.drainOrchestratorQueue(session, 100)
+      expect(msgs).toHaveLength(2)
+      expect(session.orchestratorQueue).toHaveLength(0)
+    })
+
+    it('should respect maxQueueSize for orchestrator queue', () => {
+      const store = createStore({ maxQueueSize: 2 })
+      const session = store.createSession('s1')
+      store.registerSandbox('s1', 'backend', 'sb-1')
+
+      // No orchestrator connected — messages queue up
+      for (let i = 0; i < 3; i++) {
+        store.enqueueMessage(session, 'unknown-target', {
+          from: 'backend', to: 'orchestrator',
+          type: `msg-${i}`, payload: null, priority: 'normal',
+          timestamp: new Date().toISOString(),
+        })
+      }
+
+      // Should be capped at maxQueueSize, oldest dropped
+      expect(session.orchestratorQueue).toHaveLength(2)
+      expect(session.orchestratorQueue[0]!.type).toBe('msg-1')
+      expect(session.orchestratorQueue[1]!.type).toBe('msg-2')
     })
   })
 })

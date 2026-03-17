@@ -43,6 +43,8 @@ export interface RelaySession {
     resolve: (msgs: QueuedMessage[]) => void
     timer: ReturnType<typeof setTimeout>
   }>>
+  /** Orchestrator 的 durable message queue（断连时保留消息） */
+  orchestratorQueue: QueuedMessage[]
   createdAt: number
   lastActivityAt: number
 }
@@ -55,6 +57,8 @@ export interface SessionStoreOptions {
   maxSessions?: number
   /** 每个沙箱的最大消息队列长度，默认 10000 */
   maxQueueSize?: number
+  /** 每个 session 最大沙箱数，默认 100 */
+  maxSandboxesPerSession?: number
   /** 清扫间隔（毫秒），默认 60 秒 */
   sweepIntervalMs?: number
 }

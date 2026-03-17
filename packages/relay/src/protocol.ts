@@ -15,6 +15,9 @@ export function handleRpc(
     case 'session.register':
       return handleRegister(store, id, client.sessionId, p)
 
+    case 'session.unregister':
+      return handleUnregister(store, id, client.sessionId, p)
+
     case 'message.send':
       return handleSend(store, id, client.sessionId, client.sandboxName, p)
 
@@ -22,7 +25,7 @@ export function handleRpc(
       return handleBroadcast(store, id, client.sessionId, client.sandboxName, p)
 
     case 'message.recv':
-      return handleRecv(store, id, client.sessionId, client.sandboxName, p)
+      return handleRecv(store, id, client.sessionId, client.sandboxName, client.role, p)
 
     case 'context.get':
       return handleContextGet(store, id, client.sessionId, p)
@@ -119,6 +122,21 @@ function handleRegister(
   }
 }
 
+function handleUnregister(
+  store: SessionStore,
+  id: number | string,
+  sessionId: string,
+  params: Record<string, unknown>,
+): JsonRpcResponse {
+  const name = params['name'] as string
+  if (!name) {
+    return rpcError(id, -32602, 'Missing name')
+  }
+
+  store.unregisterSandbox(sessionId, name)
+  return rpcResult(id, { ok: true })
+}
+
 function handleSend(
   store: SessionStore,
   id: number | string,
@@ -187,13 +205,21 @@ function handleRecv(
   id: number | string,
   sessionId: string,
   sandboxName: string | null,
+  role: 'orchestrator' | 'agent',
   params: Record<string, unknown>,
 ): JsonRpcResponse | Promise<JsonRpcResponse> {
   const session = store.getSession(sessionId)
   if (!session) return rpcError(id, -32000, 'Session not found')
-  if (!sandboxName) return rpcError(id, -32602, 'No sandbox name — cannot recv')
 
   const limit = (params['limit'] as number) ?? 100
+
+  // Orchestrator pull — 从 durable queue 拉取消息
+  if (!sandboxName && role === 'orchestrator') {
+    const msgs = store.drainOrchestratorQueue(session, limit)
+    return rpcResult(id, { messages: msgs })
+  }
+
+  if (!sandboxName) return rpcError(id, -32602, 'No sandbox name — cannot recv')
   const wait = (params['wait'] as number) ?? 0
 
   if (wait <= 0) {

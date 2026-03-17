@@ -5,6 +5,7 @@ import type { RelaySession, SandboxEntry, QueuedMessage, ConnectedClient, Sessio
 const DEFAULT_SESSION_TTL_MS = 30 * 60 * 1000  // 30 minutes
 const DEFAULT_MAX_SESSIONS = 1000
 const DEFAULT_MAX_QUEUE_SIZE = 10_000
+const DEFAULT_MAX_SANDBOXES_PER_SESSION = 100
 const DEFAULT_SWEEP_INTERVAL_MS = 60 * 1000    // 60 seconds
 
 export class SessionStore {
@@ -15,11 +16,13 @@ export class SessionStore {
   readonly sessionTtlMs: number
   readonly maxSessions: number
   readonly maxQueueSize: number
+  readonly maxSandboxesPerSession: number
 
   constructor(options: SessionStoreOptions = {}) {
     this.sessionTtlMs = options.sessionTtlMs ?? DEFAULT_SESSION_TTL_MS
     this.maxSessions = options.maxSessions ?? DEFAULT_MAX_SESSIONS
     this.maxQueueSize = options.maxQueueSize ?? DEFAULT_MAX_QUEUE_SIZE
+    this.maxSandboxesPerSession = options.maxSandboxesPerSession ?? DEFAULT_MAX_SANDBOXES_PER_SESSION
 
     const sweepInterval = options.sweepIntervalMs ?? DEFAULT_SWEEP_INTERVAL_MS
     if (this.sessionTtlMs > 0) {
@@ -60,6 +63,7 @@ export class SessionStore {
       clients: new Set(),
       messageQueues: new Map(),
       pollWaiters: new Map(),
+      orchestratorQueue: [],
       createdAt: now,
       lastActivityAt: now,
     }
@@ -136,12 +140,43 @@ export class SessionStore {
     return evicted
   }
 
+  /** 注销沙箱（幂等：session/sandbox 不存在不报错） */
+  unregisterSandbox(sessionId: string, name: string): void {
+    const session = this.getSession(sessionId)
+    if (!session) return
+
+    session.sandboxes.delete(name)
+    session.messageQueues.delete(name)
+
+    // 清理 poll waiters（resolve 空数组让客户端正常退出）
+    const waiters = session.pollWaiters.get(name)
+    if (waiters) {
+      for (const w of waiters) {
+        clearTimeout(w.timer)
+        w.resolve([])
+      }
+      session.pollWaiters.delete(name)
+    }
+
+    // 断开该 sandbox 的 WebSocket 客户端
+    for (const client of session.clients) {
+      if (client.sandboxName === name && client.ws.readyState === client.ws.OPEN) {
+        client.ws.close(1000, 'sandbox unregistered')
+      }
+    }
+
+    this.touch(session)
+  }
+
   /** 注册沙箱名 */
   registerSandbox(sessionId: string, name: string, sandboxId: string): void {
     const session = this.getSession(sessionId)
     if (!session) throw new Error(`Session not found: ${sessionId}`)
     if (name === 'orchestrator') throw new Error('Reserved name: orchestrator')
     if (session.sandboxes.has(name)) throw new Error(`Sandbox already registered: ${name}`)
+    if (session.sandboxes.size >= this.maxSandboxesPerSession) {
+      throw new Error(`Max sandboxes per session reached (${this.maxSandboxesPerSession})`)
+    }
 
     this.touch(session)
     session.sandboxes.set(name, { name, sandboxId, state: 'running' })
@@ -181,8 +216,12 @@ export class SessionStore {
       return
     }
 
-    // WebSocket 实时推送
-    this.pushToWebSocketClient(session, to, msg)
+    // WebSocket 实时推送 — 成功后从队列移除，避免后续 poll 重复拿到
+    const pushed = this.pushToWebSocketClient(session, to, msg)
+    if (pushed) {
+      const idx = queue.indexOf(msg)
+      if (idx >= 0) queue.splice(idx, 1)
+    }
   }
 
   /** 广播消息到所有沙箱 */
@@ -293,29 +332,54 @@ export class SessionStore {
     }
   }
 
-  private pushToWebSocketClient(session: RelaySession, targetName: string, msg: QueuedMessage): void {
+  /** 清空 orchestrator 队列（供 orchestrator pull 使用） */
+  drainOrchestratorQueue(session: RelaySession, limit = 100): QueuedMessage[] {
+    const msgs = session.orchestratorQueue.splice(0, limit)
+    if (msgs.length > 0) this.touch(session)
+    return msgs
+  }
+
+  private pushToWebSocketClient(session: RelaySession, targetName: string, msg: QueuedMessage): boolean {
     const notification = JSON.stringify({
       jsonrpc: '2.0',
       method: 'message',
       params: msg,
     })
+    let sent = false
     for (const client of session.clients) {
       if (client.sandboxName === targetName && client.ws.readyState === client.ws.OPEN) {
         client.ws.send(notification)
+        sent = true
       }
     }
+    return sent
   }
 
   private pushToOrchestrator(session: RelaySession, msg: QueuedMessage): void {
+    // 先入队（durable queue — 断连时不丢消息）
+    session.orchestratorQueue.push(msg)
+    if (session.orchestratorQueue.length > this.maxQueueSize) {
+      session.orchestratorQueue.shift()
+    }
+
+    // 尝试实时推送
     const notification = JSON.stringify({
       jsonrpc: '2.0',
       method: 'message',
       params: msg,
     })
+    let sent = false
     for (const client of session.clients) {
       if (client.role === 'orchestrator' && client.ws.readyState === client.ws.OPEN) {
         client.ws.send(notification)
+        sent = true
       }
+    }
+
+    // 推送成功则从队列移除
+    if (sent) {
+      const idx = session.orchestratorQueue.indexOf(msg)
+      if (idx >= 0) session.orchestratorQueue.splice(idx, 1)
     }
   }
 }

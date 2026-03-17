@@ -38,6 +38,28 @@ describe('protocol', () => {
     })
   })
 
+  describe('session.unregister', () => {
+    it('should unregister a sandbox', () => {
+      const store = new SessionStore()
+      store.createSession('s1')
+      store.registerSandbox('s1', 'backend', 'sb-1')
+
+      const result = handleRpc(store, rpc('session.unregister', { name: 'backend' }), makeClient({ sessionId: 's1' }))
+      expect(result).toEqual({ jsonrpc: '2.0', id: 1, result: { ok: true } })
+
+      const session = store.getSession('s1')!
+      expect(session.sandboxes.has('backend')).toBe(false)
+    })
+
+    it('should error on missing name', () => {
+      const store = new SessionStore()
+      store.createSession('s1')
+
+      const result = handleRpc(store, rpc('session.unregister', {}), makeClient({ sessionId: 's1' }))
+      expect(result).toHaveProperty('error')
+    })
+  })
+
   describe('message.send', () => {
     it('should send a message', () => {
       const store = new SessionStore()
@@ -95,16 +117,39 @@ describe('protocol', () => {
       expect(r.messages).toHaveLength(1)
     })
 
-    it('should error without sandbox name', () => {
+    it('should error without sandbox name for non-orchestrator', () => {
       const store = new SessionStore()
       store.createSession('s1')
 
       const result = handleRpc(
         store,
         rpc('message.recv'),
-        makeClient({ sessionId: 's1', sandboxName: null }),
+        makeClient({ sessionId: 's1', sandboxName: null, role: 'agent' }),
       )
       expect(result).toHaveProperty('error')
+    })
+
+    it('should allow orchestrator to pull from durable queue', () => {
+      const store = new SessionStore()
+      const session = store.createSession('s1')
+
+      // Manually add messages to orchestrator queue
+      session.orchestratorQueue.push({
+        from: 'backend', to: 'orchestrator',
+        type: 'browser.open', payload: { url: 'https://example.com' },
+        priority: 'normal', timestamp: new Date().toISOString(),
+      })
+
+      const result = handleRpc(
+        store,
+        rpc('message.recv', { limit: 10 }),
+        makeClient({ sessionId: 's1', sandboxName: null, role: 'orchestrator' }),
+      )
+
+      expect(result).toHaveProperty('result')
+      const r = (result as { result: { messages: unknown[] } }).result
+      expect(r.messages).toHaveLength(1)
+      expect(session.orchestratorQueue).toHaveLength(0)
     })
   })
 

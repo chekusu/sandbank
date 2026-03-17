@@ -343,6 +343,13 @@ export async function createSession(config: CreateSessionConfig): Promise<Sessio
       }
       completionWaiters.clear()
 
+      // 先 unregister 所有沙箱（relay 仍可达时通知清理）
+      await Promise.allSettled(
+        [...sandboxes.entries()]
+          .filter(([, sb]) => sb != null)
+          .map(([name]) => rpcCall('session.unregister', { name }).catch(() => {}))
+      )
+
       // 并行销毁所有沙箱（在断开 WebSocket 前，确保 relay 仍可达）
       // Filter out null placeholders from in-progress spawns
       await Promise.allSettled(

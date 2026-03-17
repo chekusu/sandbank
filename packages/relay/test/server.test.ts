@@ -90,6 +90,34 @@ describe('relay server', () => {
     expect(messages).toHaveLength(1)
   })
 
+  it('should handle HTTP session.unregister', async () => {
+    relay = await startRelay({ port: 0 })
+    const sessionId = 'unreg-session'
+
+    // Register
+    await httpRpc(relay.url, 'session.register', {
+      name: 'backend', sandboxId: 'sb-1',
+    }, { 'X-Session-Id': sessionId })
+
+    // Send a message to verify it's registered
+    const sendResult = await httpRpc(relay.url, 'message.send', {
+      to: 'backend', type: 'task', payload: null,
+    }, { 'X-Session-Id': sessionId })
+    expect(sendResult.result).toEqual({ ok: true })
+
+    // Unregister
+    const unregResult = await httpRpc(relay.url, 'session.unregister', {
+      name: 'backend',
+    }, { 'X-Session-Id': sessionId })
+    expect(unregResult.result).toEqual({ ok: true })
+
+    // Recv should fail (sandbox no longer registered)
+    const recvResult = await httpRpc(relay.url, 'message.recv', {
+      limit: 10,
+    }, { 'X-Session-Id': sessionId, 'X-Sandbox-Name': 'backend' })
+    expect(recvResult.error).toBeDefined()
+  })
+
   it('should handle context CRUD over HTTP', async () => {
     relay = await startRelay({ port: 0 })
     const sessionId = 'ctx-session'
