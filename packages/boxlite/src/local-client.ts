@@ -419,8 +419,8 @@ class Bridge:
     async def clone_box(self, box_id, name=None):
         inner = self._get_box(box_id)
         from boxlite import CloneOptions
-        cloned = await inner.clone_box(CloneOptions(), name)
-        cloned_id = cloned.id()
+        cloned = await inner.clone_box(options=CloneOptions(), name=name)
+        cloned_id = cloned.id
         self._boxes[cloned_id] = cloned
         info = cloned.info()
         return {
