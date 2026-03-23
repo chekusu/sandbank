@@ -14,7 +14,7 @@ import { snapshotCommand } from './commands/snapshot.js'
 import { helpCommand } from './commands/help.js'
 import type { CliFlags } from './auth.js'
 
-export const VERSION = '0.5.0'
+export const VERSION = '0.5.1'
 
 export function takeFlag(args: string[], name: string): boolean {
   const idx = args.indexOf(name)
