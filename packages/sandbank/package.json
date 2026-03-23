@@ -1,7 +1,7 @@
 {
   "name": "sandbank",
-  "version": "0.2.0",
-  "description": "Unified sandbox SDK for AI agents — write once, run on any cloud",
+  "version": "0.3.0",
+  "description": "Unified sandbox SDK and CLI for AI agents — write once, run on any cloud",
   "license": "MIT",
   "type": "module",
   "repository": {
@@ -17,28 +17,37 @@
     "agent",
     "cloud",
     "sdk",
+    "cli",
     "daytona",
     "flyio",
     "cloudflare",
     "multi-agent",
     "orchestration"
   ],
+  "bin": {
+    "sandbank": "dist/cli/index.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@sandbank.dev/cloud": "workspace:*",
     "@sandbank.dev/core": "workspace:*"
   },
   "devDependencies": {
+    "@types/node": "^25.5.0",
     "typescript": "^5.7.3"
   }
 }
