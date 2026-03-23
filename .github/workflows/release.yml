@@ -24,10 +24,35 @@ jobs:
 
       - name: Resolve workspace references
         run: |
-          VERSION=$(node -p "require('./packages/core/package.json').version")
-          for pkg in agent boxlite cloud cloudflare daytona db9 flyio relay sandbank skills; do
-            sed -i "s|\"workspace:\\*\"|\"\^$VERSION\"|g" packages/$pkg/package.json
-          done
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            const pkgs = fs.readdirSync('packages');
+            // Build version map: @sandbank.dev/X -> actual version
+            const versions = {};
+            for (const p of pkgs) {
+              const pj = JSON.parse(fs.readFileSync(path.join('packages', p, 'package.json'), 'utf8'));
+              versions[pj.name] = pj.version;
+            }
+            // Replace workspace:* with actual versions in each package
+            for (const p of pkgs) {
+              const pjPath = path.join('packages', p, 'package.json');
+              const pj = JSON.parse(fs.readFileSync(pjPath, 'utf8'));
+              let changed = false;
+              for (const depType of ['dependencies', 'devDependencies', 'peerDependencies']) {
+                const deps = pj[depType];
+                if (!deps) continue;
+                for (const [name, ver] of Object.entries(deps)) {
+                  if (ver === 'workspace:*' && versions[name]) {
+                    deps[name] = '^' + versions[name];
+                    changed = true;
+                  }
+                }
+              }
+              if (changed) fs.writeFileSync(pjPath, JSON.stringify(pj, null, 2) + '\n');
+            }
+            console.log('Resolved:', Object.entries(versions).map(([n,v]) => n+'@'+v).join(', '));
+          "
 
       # Layer 1: no internal deps
       - name: Publish @sandbank.dev/core
