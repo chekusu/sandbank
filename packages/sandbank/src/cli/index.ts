@@ -14,7 +14,7 @@ import { snapshotCommand } from './commands/snapshot.js'
 import { helpCommand } from './commands/help.js'
 import type { CliFlags } from './auth.js'
 
-export const VERSION = '0.5.3'
+export const VERSION = '0.5.4'
 
 export function takeFlag(args: string[], name: string): boolean {
   const idx = args.indexOf(name)
@@ -76,9 +76,9 @@ export async function dispatch(args: string[]): Promise<void> {
   }
 }
 
-// Only run when executed directly (not when imported for testing)
-const isDirectRun = process.argv[1]?.endsWith('/cli/index.js') || process.argv[1]?.endsWith('/cli/index.ts')
-if (isDirectRun) {
+// Only skip when imported for vitest (test runner sets special argv)
+const isTest = typeof process !== 'undefined' && process.env['VITEST']
+if (!isTest) {
   dispatch(process.argv.slice(2)).catch(err => {
     const msg = err instanceof Error ? err.message : String(err)
     console.error(msg)
