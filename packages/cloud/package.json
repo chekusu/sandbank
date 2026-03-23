@@ -1,6 +1,6 @@
 {
   "name": "@sandbank.dev/cloud",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Sandbank Cloud adapter with x402 payment support",
   "license": "MIT",
   "type": "module",
