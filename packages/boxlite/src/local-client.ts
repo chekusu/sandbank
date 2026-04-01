@@ -301,15 +301,51 @@ class Bridge:
             elif hasattr(box, "stop"):
                 await box.stop()
 
+    async def _refresh_box_handle(self, box_id, started=None):
+        rt = getattr(self, "_boxlite_rt", None)
+        if rt is None:
+            return self._boxes.get(box_id)
+
+        fresh = await rt.get(box_id)
+        if fresh is None:
+            raise RuntimeError(f"Cannot get fresh handle for box {box_id}")
+
+        old_sb = self._simple_boxes.get(box_id)
+        old_box = self._boxes.get(box_id)
+        if old_sb and hasattr(old_sb, "_box"):
+            old_sb._box = fresh
+            if started is not None:
+                old_sb._started = started
+        if old_box and hasattr(old_box, "_box"):
+            old_box._box = fresh
+        else:
+            self._boxes[box_id] = fresh
+        return fresh
+
     async def stop(self, box_id):
         box = self._boxes.get(box_id)
-        if box and hasattr(box, "stop"):
+        if box is None:
+            raise ValueError(f"Box not found: {box_id}")
+        if hasattr(box, "stop"):
             await box.stop()
+        await self._refresh_box_handle(box_id, False)
 
     async def start(self, box_id):
         box = self._boxes.get(box_id)
-        if box and hasattr(box, "start"):
-            await box.start()
+        if box is None:
+            raise ValueError(f"Box not found: {box_id}")
+
+        fresh = await self._refresh_box_handle(box_id, False)
+        if fresh and hasattr(fresh, "start"):
+            await fresh.start()
+        elif fresh and hasattr(fresh, "__aenter__"):
+            await fresh.__aenter__()
+        else:
+            raise RuntimeError(f"Box has no start method: {box_id}")
+
+        old_sb = self._simple_boxes.get(box_id)
+        if old_sb and hasattr(old_sb, "_started"):
+            old_sb._started = True
 
     def _get_box(self, box_id):
         box = self._boxes.get(box_id)

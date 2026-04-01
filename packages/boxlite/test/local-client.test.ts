@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { EventEmitter } from 'node:events'
 import type { ChildProcess } from 'node:child_process'
 import { Readable, Writable } from 'node:stream'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 // --- Mock child_process.spawn ---
 
@@ -83,10 +85,14 @@ vi.mock('node:child_process', () => ({
   spawn: (...args: unknown[]) => spawnMock(...args),
 }))
 
-vi.mock('node:fs', () => ({
-  writeFileSync: vi.fn(),
-  unlinkSync: vi.fn(),
-}))
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  return {
+    ...actual,
+    writeFileSync: vi.fn(),
+    unlinkSync: vi.fn(),
+  }
+})
 
 // --- Import after mocks ---
 
@@ -584,6 +590,17 @@ describe('BoxLiteLocalClient', () => {
 
       const spawnCall = spawnMock.mock.calls[0]!
       expect(spawnCall[2].env.BOXLITE_BRIDGE_HOME).toBe('/custom/home')
+    })
+  })
+
+  describe('embedded bridge lifecycle', () => {
+    it('refreshes the handle after stop and before start', () => {
+      const source = readFileSync(join(import.meta.dirname, '../src/local-client.ts'), 'utf8')
+
+      expect(source).toContain('async def _refresh_box_handle(self, box_id, started=None):')
+      expect(source).toContain('await self._refresh_box_handle(box_id, False)')
+      expect(source).toContain('raise RuntimeError(f"Box has no start method: {box_id}")')
+      expect(source).toContain('old_sb._started = True')
     })
   })
 })
