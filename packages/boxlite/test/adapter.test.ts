@@ -601,6 +601,14 @@ describe('BoxLiteAdapter', () => {
     })
   })
 
+  describe('public client accessor', () => {
+    it('should expose the underlying client through getClient()', () => {
+      const adapter = createAdapter()
+
+      expect(adapter.getClient()).toBe(mockClient)
+    })
+  })
+
   // 17. Local mode
   describe('local mode', () => {
     it('should include snapshot in capabilities', () => {

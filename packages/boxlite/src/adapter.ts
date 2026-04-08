@@ -292,6 +292,10 @@ export class BoxLiteAdapter implements SandboxAdapter {
     }
   }
 
+  getClient(): BoxLiteClient {
+    return this.client
+  }
+
   /** Dispose the adapter and clean up resources (e.g. Python bridge process) */
   async dispose(): Promise<void> {
     await this.client.dispose?.()

@@ -1,6 +1,6 @@
 {
   "name": "@sandbank.dev/boxlite",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "description": "BoxLite bare-metal sandbox adapter for Sandbank",
   "license": "MIT",
   "type": "module",
