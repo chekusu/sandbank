@@ -15,14 +15,9 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           registry-url: https://registry.npmjs.org
-      - name: Upgrade npm (bundled npm on runner image 20260406+ is broken)
-        run: |
-          # Pre-installed npm has missing promise-retry module, so we can't use
-          # `npm install -g npm@latest` directly. Reinstall npm's own deps first.
-          cd "$(npm root -g)/npm" && node bin/npm-cli.js install --ignore-scripts 2>/dev/null || true
-          npm install -g npm@latest
+      - run: npm install -g npm@latest
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @sandbank.dev/core build
       - run: pnpm build
