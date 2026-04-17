@@ -658,6 +658,195 @@ describe('BoxLiteClient', () => {
     })
   })
 
+  // --- Export / Import ---
+
+  describe('exportBox', () => {
+    it('should POST to export endpoint and return body stream', async () => {
+      const body = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array([1, 2, 3]))
+          controller.close()
+        },
+      })
+      mockFetch.mockResolvedValueOnce(new Response(body, { status: 200 }))
+
+      const client = createClient()
+      const stream = await client.exportBox!('box_abc')
+
+      expect(stream).toBeInstanceOf(ReadableStream)
+      const [url, opts] = mockFetch.mock.calls[0]!
+      expect(url).toBe('http://localhost:8080/v1/default/boxes/box_abc/export')
+      expect(opts.method).toBe('POST')
+    })
+
+    it('should throw on non-OK export response', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse('Not found', 404))
+
+      const client = createClient()
+      await expect(client.exportBox!('box_abc')).rejects.toThrow('BoxLite API error 404')
+    })
+  })
+
+  describe('importBox', () => {
+    it('should POST binary data to import endpoint', async () => {
+      const box = { id: 'box_new', status: 'stopped', name: null }
+      mockFetch.mockResolvedValueOnce(new Response(JSON.stringify(box), { status: 200 }))
+
+      const client = createClient()
+      const data = new Uint8Array([10, 20, 30])
+      const result = await client.importBox!(data)
+
+      expect(result.id).toBe('box_new')
+      const [url, opts] = mockFetch.mock.calls[0]!
+      expect(url).toBe('http://localhost:8080/v1/default/boxes/import')
+      expect(opts.method).toBe('POST')
+      expect(opts.headers['Content-Type']).toBe('application/octet-stream')
+    })
+  })
+
+  // --- Async exec / SSE / stdin / signal / resize ---
+
+  describe('execAsync', () => {
+    it('should POST exec and return execution without waiting', async () => {
+      const execution = { id: 'exec_1', status: 'running', exit_code: null }
+      mockFetch.mockResolvedValueOnce(mockResponse(execution))
+
+      const client = createClient()
+      const result = await client.execAsync!('box_abc', { cmd: ['long-task'] })
+
+      expect(result.id).toBe('exec_1')
+      expect(result.status).toBe('running')
+    })
+  })
+
+  describe('getExecOutput', () => {
+    it('should GET SSE stream for execution output', async () => {
+      const body = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('data: hello\n\n'))
+          controller.close()
+        },
+      })
+      mockFetch.mockResolvedValueOnce(new Response(body, { status: 200 }))
+
+      const client = createClient()
+      const stream = await client.getExecOutput!('box_abc', 'exec_1')
+
+      expect(stream).toBeInstanceOf(ReadableStream)
+      const [url, opts] = mockFetch.mock.calls[0]!
+      expect(url).toBe('http://localhost:8080/v1/default/boxes/box_abc/exec/exec_1/output')
+      expect(opts.headers['Accept']).toBe('text/event-stream')
+    })
+  })
+
+  describe('sendExecInput', () => {
+    it('should POST input data to execution', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(''))
+
+      const client = createClient()
+      await client.sendExecInput!('box_abc', 'exec_1', 'hello\n')
+
+      const [url, opts] = mockFetch.mock.calls[0]!
+      expect(url).toBe('http://localhost:8080/v1/default/boxes/box_abc/exec/exec_1/input')
+      expect(opts.method).toBe('POST')
+      expect(JSON.parse(opts.body).data).toBe('hello\n')
+    })
+  })
+
+  describe('signalExec', () => {
+    it('should POST signal to execution', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(''))
+
+      const client = createClient()
+      await client.signalExec!('box_abc', 'exec_1', 15)
+
+      const [url, opts] = mockFetch.mock.calls[0]!
+      expect(url).toBe('http://localhost:8080/v1/default/boxes/box_abc/exec/exec_1/signal')
+      expect(opts.method).toBe('POST')
+      expect(JSON.parse(opts.body).signal).toBe(15)
+    })
+  })
+
+  describe('resizeExec', () => {
+    it('should POST resize to execution', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(''))
+
+      const client = createClient()
+      await client.resizeExec!('box_abc', 'exec_1', 120, 40)
+
+      const [url, opts] = mockFetch.mock.calls[0]!
+      expect(url).toBe('http://localhost:8080/v1/default/boxes/box_abc/exec/exec_1/resize')
+      expect(opts.method).toBe('POST')
+      const body = JSON.parse(opts.body)
+      expect(body.cols).toBe(120)
+      expect(body.rows).toBe(40)
+    })
+  })
+
+  // --- Metrics / Config ---
+
+  describe('getMetrics', () => {
+    it('should GET /metrics', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse({ uptime: 3600 }))
+
+      const client = createClient()
+      const result = await client.getMetrics!()
+
+      expect(result.uptime).toBe(3600)
+      const [url] = mockFetch.mock.calls[0]!
+      expect(url).toBe('http://localhost:8080/v1/default/metrics')
+    })
+  })
+
+  describe('getBoxMetrics', () => {
+    it('should GET /boxes/{id}/metrics', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse({ cpu_usage: 0.5 }))
+
+      const client = createClient()
+      const result = await client.getBoxMetrics!('box_abc')
+
+      expect(result.cpu_usage).toBe(0.5)
+      const [url] = mockFetch.mock.calls[0]!
+      expect(url).toBe('http://localhost:8080/v1/default/boxes/box_abc/metrics')
+    })
+  })
+
+  describe('getConfig', () => {
+    it('should GET /config', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse({ version: '0.8.2' }))
+
+      const client = createClient()
+      const result = await client.getConfig!()
+
+      expect(result.version).toBe('0.8.2')
+      const [url] = mockFetch.mock.calls[0]!
+      expect(url).toBe('http://localhost:8080/v1/default/config')
+    })
+  })
+
+  // --- CreateBox with extended params ---
+
+  describe('createBox with extended params', () => {
+    it('should pass network, secrets, user, labels in body', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse({ id: 'box_new', status: 'running' }))
+
+      const client = createClient()
+      await client.createBox({
+        image: 'ubuntu:24.04',
+        network: { mode: 'enabled', allow_net: ['api.openai.com'] },
+        secrets: [{ name: 'API_KEY', value: 'sk-xxx', target: 'env' }],
+        user: 'sandbox',
+        labels: { team: 'infra' },
+      })
+
+      const body = JSON.parse(mockFetch.mock.calls[0]![1].body)
+      expect(body.network).toEqual({ mode: 'enabled', allow_net: ['api.openai.com'] })
+      expect(body.secrets).toEqual([{ name: 'API_KEY', value: 'sk-xxx', target: 'env' }])
+      expect(body.user).toBe('sandbox')
+      expect(body.labels).toEqual({ team: 'infra' })
+    })
+  })
+
   // --- Error handling ---
 
   describe('error handling', () => {

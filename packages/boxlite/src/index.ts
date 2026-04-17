@@ -5,4 +5,12 @@ export type {
   BoxLiteRemoteConfig,
   BoxLiteLocalConfig,
   BoxLiteClient,
+  BoxLiteBox,
+  BoxLiteCreateParams,
+  BoxLiteExecRequest,
+  BoxLiteExecution,
+  BoxLiteSnapshot,
+  BoxLiteNetworkConfig,
+  BoxLiteSecretSpec,
+  BoxStatus,
 } from './types.js'

@@ -14,7 +14,7 @@ import type {
 import { SandboxNotFoundError, ProviderError } from '@sandbank.dev/core'
 import { createBoxLiteRestClient } from './client.js'
 import { createBoxLiteLocalClient } from './local-client.js'
-import type { BoxLiteAdapterConfig, BoxLiteBox, BoxLiteClient } from './types.js'
+import type { BoxLiteAdapterConfig, BoxLiteBox, BoxLiteClient, BoxLiteNetworkConfig } from './types.js'
 
 /** Map BoxLite box status to Sandbank SandboxState */
 function mapState(status: string): SandboxState {
@@ -201,6 +201,7 @@ export class BoxLiteAdapter implements SandboxAdapter {
       // If image looks like an absolute path, treat it as a local OCI rootfs
       const image = config.image ?? 'ubuntu:24.04'
       const isLocalPath = image.startsWith('/')
+      const user = typeof config.user === 'string' ? config.user : config.user?.name
       const box = await this.client.createBox({
         ...(isLocalPath ? { rootfs_path: image } : { image }),
         cpu: config.resources?.cpu,
@@ -209,6 +210,7 @@ export class BoxLiteAdapter implements SandboxAdapter {
         env: config.env,
         auto_remove: false,
         ports: config.ports,
+        ...(user ? { user } : {}),
       })
 
       const portMap = new Map<number, number>()

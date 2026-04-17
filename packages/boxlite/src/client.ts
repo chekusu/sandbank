@@ -275,5 +275,90 @@ export function createBoxLiteRestClient(config: BoxLiteRemoteConfig): BoxLiteCli
         body: JSON.stringify(name ? { name } : {}),
       })
     },
+
+    async exportBox(boxId: string): Promise<ReadableStream<Uint8Array>> {
+      const response = await request(`/boxes/${boxId}/export`, { method: 'POST' }, true)
+      if (!response.ok) {
+        const body = await response.text()
+        throw new Error(`BoxLite API error ${response.status}: ${body}`)
+      }
+      if (!response.body) throw new Error('BoxLite export: no response body')
+      return response.body
+    },
+
+    async importBox(data: Uint8Array): Promise<BoxLiteBox> {
+      const bearerToken = await ensureToken()
+      const url = `${baseUrl}${prefix ? `/${prefix}` : ''}/boxes/import`
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${bearerToken}`,
+          'Content-Type': 'application/octet-stream',
+        },
+        body: data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer,
+      })
+      if (!response.ok) {
+        const body = await response.text()
+        throw new Error(`BoxLite API error ${response.status}: ${body}`)
+      }
+      return response.json() as Promise<BoxLiteBox>
+    },
+
+    async execAsync(
+      boxId: string,
+      req: BoxLiteExecRequest,
+    ): Promise<BoxLiteExecution> {
+      return request<BoxLiteExecution>(`/boxes/${boxId}/exec`, {
+        method: 'POST',
+        body: JSON.stringify(req),
+      })
+    },
+
+    async getExecOutput(boxId: string, execId: string): Promise<ReadableStream<Uint8Array>> {
+      const response = await request(
+        `/boxes/${boxId}/exec/${execId}/output`,
+        { headers: { 'Accept': 'text/event-stream' } as Record<string, string> },
+        true,
+      )
+      if (!response.ok) {
+        const body = await response.text()
+        throw new Error(`BoxLite API error ${response.status}: ${body}`)
+      }
+      if (!response.body) throw new Error('BoxLite SSE: no response body')
+      return response.body
+    },
+
+    async sendExecInput(boxId: string, execId: string, data: string): Promise<void> {
+      await request(`/boxes/${boxId}/exec/${execId}/input`, {
+        method: 'POST',
+        body: JSON.stringify({ data }),
+      })
+    },
+
+    async signalExec(boxId: string, execId: string, signal: number): Promise<void> {
+      await request(`/boxes/${boxId}/exec/${execId}/signal`, {
+        method: 'POST',
+        body: JSON.stringify({ signal }),
+      })
+    },
+
+    async resizeExec(boxId: string, execId: string, cols: number, rows: number): Promise<void> {
+      await request(`/boxes/${boxId}/exec/${execId}/resize`, {
+        method: 'POST',
+        body: JSON.stringify({ cols, rows }),
+      })
+    },
+
+    async getMetrics(): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('/metrics')
+    },
+
+    async getBoxMetrics(boxId: string): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>(`/boxes/${boxId}/metrics`)
+    },
+
+    async getConfig(): Promise<Record<string, unknown>> {
+      return request<Record<string, unknown>>('/config')
+    },
   }
 }

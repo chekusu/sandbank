@@ -45,6 +45,16 @@ export interface BoxLiteClient {
   listSnapshots(boxId: string): Promise<BoxLiteSnapshot[]>
   deleteSnapshot(boxId: string, name: string): Promise<void>
   cloneBox(boxId: string, name?: string): Promise<BoxLiteBox>
+  exportBox?(boxId: string): Promise<ReadableStream<Uint8Array>>
+  importBox?(data: Uint8Array): Promise<BoxLiteBox>
+  execAsync?(boxId: string, req: BoxLiteExecRequest): Promise<BoxLiteExecution>
+  getExecOutput?(boxId: string, execId: string): Promise<ReadableStream<Uint8Array>>
+  sendExecInput?(boxId: string, execId: string, data: string): Promise<void>
+  signalExec?(boxId: string, execId: string, signal: number): Promise<void>
+  resizeExec?(boxId: string, execId: string, cols: number, rows: number): Promise<void>
+  getMetrics?(): Promise<Record<string, unknown>>
+  getBoxMetrics?(boxId: string): Promise<Record<string, unknown>>
+  getConfig?(): Promise<Record<string, unknown>>
   /** Dispose of the client (cleanup subprocess, etc.) */
   dispose?(): Promise<void>
 }
@@ -65,7 +75,7 @@ export interface BoxLiteBox {
   disk_size_gb?: number
   workdir?: string
   env?: Record<string, string> | null
-  network?: boolean
+  network?: boolean | BoxLiteNetworkConfig
   error_code?: string | null
   error_message?: string | null
   volumes?: unknown
@@ -107,6 +117,17 @@ export interface BoxLiteSnapshot {
   container_disk_bytes?: number
 }
 
+export interface BoxLiteNetworkConfig {
+  mode: 'enabled' | 'disabled'
+  allow_net?: string[]
+}
+
+export interface BoxLiteSecretSpec {
+  name: string
+  value: string
+  target?: string
+}
+
 export interface BoxLiteCreateParams {
   image?: string
   /** Path to a local OCI layout directory. When set, overrides `image` (no registry pull). */
@@ -121,6 +142,12 @@ export interface BoxLiteCreateParams {
   security?: string
   /** Port mappings [hostPort, guestPort][] for local mode */
   ports?: [number, number][]
+  network?: BoxLiteNetworkConfig
+  secrets?: BoxLiteSecretSpec[]
+  entrypoint?: string
+  cmd?: string[]
+  user?: string
+  labels?: Record<string, string>
 }
 
 export interface BoxLiteTokenResponse {
