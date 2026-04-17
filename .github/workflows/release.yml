@@ -17,7 +17,6 @@ jobs:
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
-      - run: npm install -g npm@latest
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @sandbank.dev/core build
       - run: pnpm build
