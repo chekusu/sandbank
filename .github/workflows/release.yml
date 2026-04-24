@@ -54,6 +54,14 @@ jobs:
             console.log('Resolved:', Object.entries(versions).map(([n,v]) => n+'@'+v).join(', '));
           "
 
+      - name: Verify no workspace protocol leaks
+        run: |
+          if grep -Hn '"workspace:' packages/*/package.json; then
+            echo "::error::Unresolved 'workspace:' protocol found in package.json above — the resolve step missed them. Aborting publish."
+            exit 1
+          fi
+          echo "All workspace references resolved; safe to publish."
+
       # Layer 1: no internal deps
       - name: Publish @sandbank.dev/core
         run: npm publish --provenance --access public || true
