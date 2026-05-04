@@ -304,6 +304,15 @@ describe('BoxLiteLocalClient', () => {
       const cmd = proc.sentCommands.find(c => c.action === 'destroy')
       expect(cmd!.box_id).toBe('box_123')
     })
+
+    it('should pass force to destroy action', async () => {
+      const { client, proc } = await createReadyClient()
+      proc.autoRespond({})
+
+      await client.deleteBox('box_123', true)
+
+      expect(proc.sentCommands.at(-1)).toMatchObject({ action: 'destroy', box_id: 'box_123', force: true })
+    })
   })
 
   describe('startBox', () => {
@@ -594,13 +603,49 @@ describe('BoxLiteLocalClient', () => {
   })
 
   describe('embedded bridge lifecycle', () => {
-    it('refreshes the handle after stop and before start', () => {
+    it('reacquires box handles from the runtime after bridge restart', () => {
       const source = readFileSync(join(import.meta.dirname, '../src/local-client.ts'), 'utf8')
 
       expect(source).toContain('async def _refresh_box_handle(self, box_id, started=None):')
-      expect(source).toContain('await self._refresh_box_handle(box_id, False)')
+      expect(source).toContain('await self._ensure_runtime()')
+      expect(source).toContain('fresh = await rt.get(box_id)')
+      expect(source).toContain('async def _get_box_async(self, box_id):')
+      expect(source).toContain('return await self._refresh_box_handle(box_id)')
+      expect(source).toContain('box = await self._get_box_async(box_id)')
+      expect(source).not.toContain('async def get(self, box_id):\n        box = self._boxes.get(box_id)')
+    })
+
+    it('uses fresh handles for stopped box lifecycle operations', () => {
+      const source = readFileSync(join(import.meta.dirname, '../src/local-client.ts'), 'utf8')
+
+      expect(source).toContain('def _box_status(self, box):')
+      expect(source).toContain('status_attr = getattr(value, "status", None)')
+      expect(source).toContain('info = info_fn()')
+      expect(source).toContain('return self._normalize_status(state)')
+      expect(source).toContain('async def _get_fresh_box(self, box_id):')
+      expect(source).toContain('inner = await self._get_fresh_box(box_id)')
+      expect(source).toContain('fresh = await self._refresh_box_handle(box_id, False)')
       expect(source).toContain('raise RuntimeError(f"Box has no start method: {box_id}")')
       expect(source).toContain('old_sb._started = True')
+    })
+
+    it('does not destroy boxes during graceful bridge shutdown', () => {
+      const source = readFileSync(join(import.meta.dirname, '../src/local-client.ts'), 'utf8')
+
+      expect(source).toContain('async def cleanup(self, graceful=True):')
+      expect(source).toContain('self._boxes.clear()')
+      expect(source).toContain('self._simple_boxes.clear()')
+      expect(source).toContain('await bridge.cleanup()')
+    })
+
+    it('removes reacquired boxes through the runtime on destroy', () => {
+      const source = readFileSync(join(import.meta.dirname, '../src/local-client.ts'), 'utf8')
+
+      expect(source).toContain('async def destroy(self, box_id, force=False):')
+      expect(source).toContain('await self._ensure_runtime()')
+      expect(source).toContain('for method_name in ("remove", "destroy", "delete"):')
+      expect(source).toContain('await fn(box_id, force=force)')
+      expect(source).toContain('await bridge.destroy(cmd["box_id"], cmd.get("force", False))')
     })
   })
 })

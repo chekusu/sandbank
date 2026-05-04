@@ -161,12 +161,10 @@ class Bridge:
         }
 
     async def get(self, box_id):
-        box = self._boxes.get(box_id)
-        if box is None:
-            raise ValueError(f"Box not found: {box_id}")
+        box = await self._get_box_async(box_id)
         return {
             "id": box_id,
-            "status": str(getattr(box, "status", "running")),
+            "status": self._box_status(box),
             "image": getattr(box, "image", "unknown"),
             "cpu": getattr(box, "cpu", 1),
             "memory_mb": getattr(box, "memory_mb", 512),
@@ -179,7 +177,7 @@ class Bridge:
         for box_id, box in self._boxes.items():
             results.append({
                 "id": box_id,
-                "status": str(getattr(box, "status", "running")),
+                "status": self._box_status(box),
                 "image": getattr(box, "image", "unknown"),
                 "cpu": getattr(box, "cpu", 1),
                 "memory_mb": getattr(box, "memory_mb", 512),
@@ -189,9 +187,7 @@ class Bridge:
         return results
 
     async def exec_cmd(self, box_id, cmd, **kwargs):
-        box = self._boxes.get(box_id)
-        if box is None:
-            raise ValueError(f"Box not found: {box_id}")
+        box = await self._get_box_async(box_id)
 
         result = None
         errors = []
@@ -276,9 +272,27 @@ class Bridge:
             "exit_code": exit_code,
         }
 
-    async def destroy(self, box_id):
+    async def destroy(self, box_id, force=False):
         box = self._boxes.pop(box_id, None)
         sb = self._simple_boxes.pop(box_id, None)
+
+        await self._ensure_runtime()
+        rt = getattr(self, "_boxlite_rt", None)
+        if rt is not None:
+            for method_name in ("remove", "destroy", "delete"):
+                fn = getattr(rt, method_name, None)
+                if fn is None:
+                    continue
+                try:
+                    try:
+                        await fn(box_id, force=force)
+                    except TypeError:
+                        await fn(box_id)
+                    return
+                except Exception:
+                    if box is None and sb is None:
+                        raise
+                    break
 
         if sb is not None:
             try:
@@ -302,13 +316,20 @@ class Bridge:
                 await box.stop()
 
     async def _refresh_box_handle(self, box_id, started=None):
+        await self._ensure_runtime()
         rt = getattr(self, "_boxlite_rt", None)
         if rt is None:
-            return self._boxes.get(box_id)
+            box = self._boxes.get(box_id)
+            if box is None:
+                raise ValueError(f"Box not found: {box_id}")
+            return box
 
-        fresh = await rt.get(box_id)
+        try:
+            fresh = await rt.get(box_id)
+        except Exception as exc:
+            raise ValueError(f"Box not found: {box_id}") from exc
         if fresh is None:
-            raise RuntimeError(f"Cannot get fresh handle for box {box_id}")
+            raise ValueError(f"Box not found: {box_id}")
 
         old_sb = self._simple_boxes.get(box_id)
         old_box = self._boxes.get(box_id)
@@ -323,18 +344,12 @@ class Bridge:
         return fresh
 
     async def stop(self, box_id):
-        box = self._boxes.get(box_id)
-        if box is None:
-            raise ValueError(f"Box not found: {box_id}")
+        box = await self._get_box_async(box_id)
         if hasattr(box, "stop"):
             await box.stop()
         await self._refresh_box_handle(box_id, False)
 
     async def start(self, box_id):
-        box = self._boxes.get(box_id)
-        if box is None:
-            raise ValueError(f"Box not found: {box_id}")
-
         fresh = await self._refresh_box_handle(box_id, False)
         if fresh and hasattr(fresh, "start"):
             await fresh.start()
@@ -347,6 +362,43 @@ class Bridge:
         if old_sb and hasattr(old_sb, "_started"):
             old_sb._started = True
 
+    def _normalize_status(self, value):
+        status_attr = getattr(value, "status", None)
+        if status_attr is not None and status_attr is not value:
+            return self._normalize_status(status_attr)
+        if isinstance(value, dict) and value.get("status") is not None:
+            return self._normalize_status(value.get("status"))
+
+        text = str(value or "").lower()
+        for state in ("configured", "stopping", "stopped", "paused", "running"):
+            if state in text:
+                return state
+        return text or "unknown"
+
+    def _box_status(self, box):
+        status = getattr(box, "status", None)
+        if status is not None:
+            return self._normalize_status(status)
+
+        inner = getattr(box, "_box", box)
+        info_fn = getattr(inner, "info", None)
+        if callable(info_fn):
+            try:
+                info = info_fn()
+                state = getattr(info, "state", None)
+                if state is not None:
+                    return self._normalize_status(state)
+            except Exception:
+                pass
+
+        return "unknown"
+
+    async def _get_box_async(self, box_id):
+        box = self._boxes.get(box_id)
+        if box is not None:
+            return box
+        return await self._refresh_box_handle(box_id)
+
     def _get_box(self, box_id):
         box = self._boxes.get(box_id)
         if box is None:
@@ -355,11 +407,22 @@ class Bridge:
         inner = getattr(box, "_box", box)
         return inner
 
+    async def _get_fresh_box(self, box_id):
+        try:
+            fresh = await self._refresh_box_handle(box_id)
+            if fresh is not None:
+                return getattr(fresh, "_box", fresh)
+        except Exception:
+            if self._boxes.get(box_id) is None:
+                raise
+
+        return self._get_box(box_id)
+
     async def create_snapshot(self, box_id, name):
         # boxlite snapshot uses fork_qcow2 (rename + COW child). If QEMU is
         # running, its FD still points to the renamed inode, so post-snapshot
         # writes corrupt the snapshot file. Must stop → snapshot → restart.
-        inner = self._get_box(box_id)
+        inner = await self._get_fresh_box(box_id)
         await inner.stop()
 
         rt = getattr(self, "_boxlite_rt", None)
@@ -401,7 +464,7 @@ class Bridge:
     async def restore_snapshot(self, box_id, name):
         # Same stop → fresh handle pattern as create_snapshot.
         # stop() also invalidates the LiteBox handle (cancels shutdown_token).
-        inner = self._get_box(box_id)
+        inner = await self._get_fresh_box(box_id)
         await inner.stop()
 
         rt = getattr(self, "_boxlite_rt", None)
@@ -430,7 +493,7 @@ class Bridge:
             self._boxes[box_id] = fresh
 
     async def list_snapshots(self, box_id):
-        inner = self._get_box(box_id)
+        inner = await self._get_fresh_box(box_id)
         snap_handle = getattr(inner, "snapshot", None)
         if snap_handle is None:
             raise RuntimeError("Box does not support snapshots")
@@ -446,14 +509,14 @@ class Bridge:
         } for s in snapshots]
 
     async def delete_snapshot(self, box_id, name):
-        inner = self._get_box(box_id)
+        inner = await self._get_fresh_box(box_id)
         snap_handle = getattr(inner, "snapshot", None)
         if snap_handle is None:
             raise RuntimeError("Box does not support snapshots")
         await snap_handle.remove(name)
 
     async def clone_box(self, box_id, name=None):
-        inner = self._get_box(box_id)
+        inner = await self._get_fresh_box(box_id)
         from boxlite import CloneOptions
         cloned = await inner.clone_box(options=CloneOptions(), name=name)
         cloned_id = cloned.id
@@ -469,7 +532,15 @@ class Bridge:
             "created_at": "",
         }
 
-    async def cleanup(self):
+    async def cleanup(self, graceful=True):
+        if graceful:
+            # Process/bridge shutdown must not destroy tenant boxes. Running and
+            # stopped boxes can be reacquired from disk by _get_box_async after
+            # the next bridge starts.
+            self._boxes.clear()
+            self._simple_boxes.clear()
+            return
+
         for box_id in list(self._boxes.keys()):
             try:
                 await self.destroy(box_id)
@@ -512,7 +583,7 @@ async def main():
             elif action == "exec":
                 result = await bridge.exec_cmd(cmd["box_id"], cmd["cmd"])
             elif action == "destroy":
-                await bridge.destroy(cmd["box_id"])
+                await bridge.destroy(cmd["box_id"], cmd.get("force", False))
                 result = {}
             elif action == "start":
                 await bridge.start(cmd["box_id"])
@@ -721,8 +792,8 @@ export function createBoxLiteLocalClient(config: BoxLiteLocalConfig): BoxLiteCli
       return send<BoxLiteBox[]>({ action: 'list' })
     },
 
-    async deleteBox(boxId: string): Promise<void> {
-      await send({ action: 'destroy', box_id: boxId })
+    async deleteBox(boxId: string, force?: boolean): Promise<void> {
+      await send({ action: 'destroy', box_id: boxId, force: force ?? false })
     },
 
     async startBox(boxId: string): Promise<void> {
