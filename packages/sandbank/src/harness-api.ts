@@ -17,13 +17,49 @@ export interface DbNativeAgentHarnessEnv {
   OPENAI_BASE_URL?: string
   SANDBANK_HARNESS_API_KEY?: string
   CHATW_HARNESS_API_KEY?: string
+  SANDBANK_DYNAMIC_WORKER_TIMEOUT_MS?: string
+  SANDBANK_DYNAMIC_WORKER_CPU_MS?: string
+  SANDBANK_DYNAMIC_WORKER_SUBREQUESTS?: string
 }
 
 export interface DbNativeAgentHarnessDeps {
   createWorkspace?: (env: DbNativeAgentHarnessEnv) => Promise<WorkspaceAdapter>
+  createExecutionCapsule?: (context: HarnessExecutionCapsuleContext) => HarnessExecutionCapsule | undefined | Promise<HarnessExecutionCapsule | undefined>
   fetchImpl?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>
   id?: () => string
   now?: () => Date
+}
+
+export interface HarnessExecutionCapsuleContext {
+  runId: string
+  agentId: string
+  workspace: WorkspaceAdapter
+  input: ChatWWorkerInput
+  env: DbNativeAgentHarnessEnv
+}
+
+export type HarnessExecutionEvent =
+  | { type: 'stream.chunk'; text: string }
+  | { type: 'log'; level: 'debug' | 'info' | 'warn' | 'error'; message: string; metadata?: Record<string, unknown> }
+  | { type: 'artifact'; name: string; path: string; mediaType?: string; size?: number; metadata?: Record<string, unknown> }
+
+export interface HarnessExecutionCapsule {
+  invoke(options: {
+    id?: string
+    code: string
+    request: Request
+    workspace: WorkspaceAdapter
+    workspaceScope: {
+      readablePaths: string[]
+      writablePaths: string[]
+      allowList: boolean
+      allowQuery: boolean
+      artifactRoot: string
+    }
+    timeoutMs?: number
+    limits?: { cpuMs?: number; subRequests?: number }
+    onEvent?: (event: HarnessExecutionEvent) => void | Promise<void>
+  }): Promise<{ status: number; headers: Record<string, string>; body: string }>
 }
 
 export interface DbNativeAgentHarnessServerOptions extends DbNativeAgentHarnessDeps {
@@ -188,6 +224,16 @@ async function runHarness(
           label: 'workspace.persisted',
           detail: `db9 workspace wrote /runs/${runId}/request.json`,
         })
+        await runDynamicWorkerCapsule({
+          input,
+          env,
+          deps,
+          send,
+          harnessId,
+          runId,
+          workspace,
+          context,
+        })
         await send({
           type: 'tool.use',
           toolCallId,
@@ -249,6 +295,149 @@ async function runHarness(
     await send({ type: 'text.delta', messageId: assistantId, text: error.message })
     await send({ type: 'run.done', messageId: assistantId, status: 'failed', metadata: { runId, code: error.code } })
   }
+}
+
+async function runDynamicWorkerCapsule(options: {
+  input: ChatWWorkerInput
+  env: DbNativeAgentHarnessEnv
+  deps: DbNativeAgentHarnessDeps
+  send: (event: ChatWEvent) => Promise<unknown>
+  harnessId: string
+  runId: string
+  workspace: WorkspaceAdapter
+  context: {
+    run: { agentId: string }
+    audit: (action: string, metadata?: Record<string, unknown>) => Promise<void>
+  }
+}): Promise<void> {
+  const capsule = await options.deps.createExecutionCapsule?.({
+    runId: options.runId,
+    agentId: options.context.run.agentId,
+    workspace: options.workspace,
+    input: sanitizeInput(options.input),
+    env: options.env,
+  })
+  if (!capsule) return
+
+  const toolCallId = `tool_dynamic_worker_${options.runId}`
+  const timeoutMs = parsePositiveInt(options.env.SANDBANK_DYNAMIC_WORKER_TIMEOUT_MS, 15_000)
+  const limits = resolveDynamicWorkerLimits(options.env)
+  const workspaceScope = {
+    readablePaths: ['/agents', '/runs', '/messages', '/workspace', '/.sandbank'],
+    writablePaths: ['/agents', '/runs', '/messages', '/workspace', '/.sandbank'],
+    allowList: true,
+    allowQuery: Boolean(options.workspace.capabilities.query),
+    artifactRoot: `/runs/${options.runId}/artifacts`,
+  }
+
+  await options.send({
+    type: 'tool.use',
+    toolCallId,
+    name: 'dynamic_worker_capsule',
+    input: {
+      runId: options.runId,
+      workspace: options.workspace.id,
+      timeoutMs,
+      limits,
+      bindings: ['SANDBANK_WORKSPACE', 'SANDBANK_RUNTIME'],
+    },
+  })
+
+  const result = await capsule.invoke({
+    id: 'sandbank-harness-tool-v1',
+    code: buildHarnessDynamicWorkerCode(),
+    request: new Request('https://dynamic-worker.sandbank.dev/sandbank-harness/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        runId: options.runId,
+        agentId: options.context.run.agentId,
+        workspaceId: options.workspace.id,
+        input: sanitizeInput(options.input),
+        paths: {
+          capsuleRequest: `/runs/${options.runId}/dynamic-worker/request.json`,
+          artifactRoot: `/runs/${options.runId}/artifacts`,
+        },
+      }),
+    }),
+    workspace: options.workspace,
+    workspaceScope,
+    timeoutMs,
+    limits,
+    onEvent: async event => {
+      if (event.type === 'log') {
+        await options.context.audit('dynamic_worker.log', { level: event.level, message: event.message, metadata: event.metadata })
+        await options.send({
+          type: 'harness.event',
+          harnessId: options.harnessId,
+          label: 'dynamic-worker.log',
+          detail: event.message,
+        })
+      } else if (event.type === 'stream.chunk') {
+        await options.send({
+          type: 'harness.event',
+          harnessId: options.harnessId,
+          label: 'dynamic-worker.stream',
+          detail: event.text,
+        })
+      } else if (event.type === 'artifact') {
+        await options.context.audit('dynamic_worker.artifact', {
+          path: event.path,
+          name: event.name,
+          mediaType: event.mediaType,
+          size: event.size,
+        })
+        await options.send({
+          type: 'harness.event',
+          harnessId: options.harnessId,
+          label: 'dynamic-worker.artifact',
+          detail: event.path,
+        })
+      }
+    },
+  })
+
+  await options.context.audit('dynamic_worker.completed', {
+    status: result.status,
+    outputBytes: new TextEncoder().encode(result.body).byteLength,
+  })
+  await options.send({
+    type: 'tool.result',
+    toolCallId,
+    name: 'dynamic_worker_capsule',
+    status: result.status >= 200 && result.status < 400 ? 'completed' : 'failed',
+    result: {
+      status: result.status,
+      body: result.body.slice(0, 2_000),
+    },
+  })
+
+  if (result.status < 200 || result.status >= 400) {
+    throw new PublicHarnessError('dynamic_worker_http_error', `Dynamic Worker capsule failed with HTTP ${result.status}.`)
+  }
+}
+
+function buildHarnessDynamicWorkerCode(): string {
+  return `
+export default {
+  async fetch(request, env) {
+    const payload = await request.json();
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        const write = (event) => controller.enqueue(encoder.encode(JSON.stringify(event) + "\\n"));
+        await env.SANDBANK_RUNTIME.log("info", "dynamic worker capsule started", { runId: payload.runId, workspaceId: payload.workspaceId });
+        await env.SANDBANK_WORKSPACE.write(payload.paths.capsuleRequest, JSON.stringify(payload, null, 2));
+        const storedRequest = await env.SANDBANK_WORKSPACE.read(payload.paths.capsuleRequest);
+        await env.SANDBANK_RUNTIME.artifact("dynamic-worker-request.json", storedRequest, { mediaType: "application/json" });
+        write({ type: "ready", runId: payload.runId, workspaceId: payload.workspaceId });
+        controller.close();
+      }
+    });
+    return new Response(stream, { headers: { "Content-Type": "application/x-ndjson; charset=utf-8" } });
+  }
+}
+`.trim()
 }
 
 async function resolveWorkspace(
@@ -445,6 +634,22 @@ function describeHarnessCapabilities(env: DbNativeAgentHarnessEnv) {
       vasService: 'vas dev <service> pnpm --filter ./packages/sandbank exec tsx src/cli/index.ts harness-api --host 0.0.0.0',
     },
   }
+}
+
+function resolveDynamicWorkerLimits(env: DbNativeAgentHarnessEnv): { cpuMs?: number; subRequests?: number } {
+  const cpuMs = parsePositiveInt(env.SANDBANK_DYNAMIC_WORKER_CPU_MS)
+  const subRequests = parsePositiveInt(env.SANDBANK_DYNAMIC_WORKER_SUBREQUESTS)
+  return {
+    ...(cpuMs ? { cpuMs } : {}),
+    ...(subRequests ? { subRequests } : {}),
+  }
+}
+
+function parsePositiveInt(value: string | undefined, fallback?: number): number | undefined {
+  if (!value) return fallback
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed) || parsed <= 0) return fallback
+  return parsed
 }
 
 function resolveModel(env: DbNativeAgentHarnessEnv): string {

@@ -1,0 +1,22 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "sandbank-harness",
+  "main": "src/harness-worker.ts",
+  "compatibility_date": "2026-05-27",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "observability": {
+    "enabled": true
+  },
+  "worker_loaders": [
+    {
+      "binding": "LOADER"
+    }
+  ],
+  "vars": {
+    "CHATW_DEEPSEEK_MODEL": "deepseek-v4-pro",
+    "SANDBANK_DYNAMIC_WORKER_TIMEOUT_MS": "15000",
+    "SANDBANK_DYNAMIC_WORKER_CPU_MS": "50",
+    "SANDBANK_DYNAMIC_WORKER_SUBREQUESTS": "8"
+  }
+}

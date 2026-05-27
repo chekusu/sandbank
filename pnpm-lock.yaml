@@ -89,6 +89,9 @@ importers:
       '@sandbank.dev/core':
         specifier: workspace:*
         version: link:../core
+      '@sandbank.dev/workspace':
+        specifier: workspace:*
+        version: link:../workspace
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^4.20250214.0
@@ -181,6 +184,9 @@ importers:
       '@sandbank.dev/cloud':
         specifier: workspace:*
         version: link:../cloud
+      '@sandbank.dev/cloudflare':
+        specifier: workspace:*
+        version: link:../cloudflare
       '@sandbank.dev/core':
         specifier: workspace:*
         version: link:../core

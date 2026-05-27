@@ -60,6 +60,7 @@
   },
   "dependencies": {
     "@sandbank.dev/cloud": "workspace:*",
+    "@sandbank.dev/cloudflare": "workspace:*",
     "@sandbank.dev/core": "workspace:*",
     "@sandbank.dev/db9": "workspace:*",
     "@sandbank.dev/workspace": "workspace:*"

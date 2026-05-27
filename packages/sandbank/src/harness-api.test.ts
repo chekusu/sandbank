@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { MemoryWorkspaceAdapter } from '@sandbank.dev/workspace'
+import { MemoryWorkspaceAdapter, type WorkspaceAdapter } from '@sandbank.dev/workspace'
 import { createDbNativeAgentHarnessHandler } from './harness-api.js'
 import { startDbNativeAgentHarnessServer } from './harness-node.js'
 import harnessWorker from './harness-worker.js'
@@ -59,6 +59,77 @@ describe('createDbNativeAgentHarnessHandler', () => {
     ]))
     await expect(workspace.read('/runs/run_1/assistant.md')).resolves.toBe('hello from db9')
     await expect(workspace.read('/runs/index.jsonl')).resolves.toContain('run_1')
+  })
+
+  it('invokes a configured Dynamic Worker capsule for the run and forwards its events', async () => {
+    const workspace = new MemoryWorkspaceAdapter(undefined, { id: 'db9:test' })
+    const fetchImpl = vi.fn(async () => {
+      const encoder = new TextEncoder()
+      return new Response(new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"model answer"}}]}\n\n'))
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+          controller.close()
+        },
+      }), {
+        headers: { 'Content-Type': 'text/event-stream' },
+      })
+    })
+    let capsulePayload: Record<string, unknown> | undefined
+    const invokeCapsule = vi.fn(async (options: {
+      request: Request
+      workspace: WorkspaceAdapter
+      workspaceScope: unknown
+      code: string
+      id?: string
+      timeoutMs?: number
+      limits?: { cpuMs?: number; subRequests?: number }
+      onEvent?: (event: { type: 'stream.chunk'; text: string } | { type: 'log'; level: 'info'; message: string; metadata?: Record<string, unknown> } | { type: 'artifact'; name: string; path: string; mediaType?: string; size?: number }) => Promise<void> | void
+    }) => {
+      capsulePayload = await options.request.json() as Record<string, unknown>
+      await options.workspace.write('/workspace/from-capsule.txt', 'capsule wrote this')
+      await options.onEvent?.({ type: 'log', level: 'info', message: 'capsule booted', metadata: { runId: capsulePayload.runId } })
+      await options.onEvent?.({ type: 'stream.chunk', text: 'capsule streamed' })
+      await options.onEvent?.({ type: 'artifact', name: 'capsule.txt', path: '/artifacts/run_dw/capsule.txt', mediaType: 'text/plain', size: 7 })
+      return { status: 200, headers: {}, body: 'capsule-complete' }
+    })
+    const handler = createDbNativeAgentHarnessHandler({
+      DB9_DATABASE_ID: 'db-test',
+      DEEPSEEK_API_KEY: 'deepseek-key',
+      SANDBANK_DYNAMIC_WORKER_TIMEOUT_MS: '5000',
+      SANDBANK_DYNAMIC_WORKER_CPU_MS: '50',
+      SANDBANK_DYNAMIC_WORKER_SUBREQUESTS: '6',
+    }, {
+      createWorkspace: async () => workspace,
+      fetchImpl,
+      now: () => new Date('2026-05-27T00:00:00.000Z'),
+      id: () => 'run_dw',
+      createExecutionCapsule: () => ({ invoke: invokeCapsule }),
+    })
+
+    const response = await handler.fetch(new Request('https://sandbank.dev/api/db-native-agent-harness/stream', {
+      method: 'POST',
+      body: JSON.stringify({
+        message: '@codex use the dynamic worker capsule',
+        mentions: { cleanedMessage: 'use the dynamic worker capsule', agent: 'codex' },
+      }),
+    }))
+    const body = await response.text()
+
+    expect(invokeCapsule).toHaveBeenCalledTimes(1)
+    expect(invokeCapsule.mock.calls[0]?.[0]).toMatchObject({
+      timeoutMs: 5000,
+      limits: { cpuMs: 50, subRequests: 6 },
+      workspace,
+    })
+    expect(capsulePayload).toMatchObject({ runId: 'run_dw', agentId: 'codex', workspaceId: 'db9:test' })
+    expect(body).toContain('"name":"dynamic_worker_capsule"')
+    expect(body).toContain('dynamic-worker.log')
+    expect(body).toContain('capsule booted')
+    expect(body).toContain('dynamic-worker.stream')
+    expect(body).toContain('capsule-complete')
+    expect(body).toContain('"text":"model answer"')
+    await expect(workspace.read('/workspace/from-capsule.txt')).resolves.toBe('capsule wrote this')
   })
 
   it('reports missing db9 configuration as a chatw error event', async () => {

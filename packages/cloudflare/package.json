@@ -15,6 +15,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./dynamic-worker-capsule": {
+      "types": "./dist/dynamic-worker-capsule.d.ts",
+      "import": "./dist/dynamic-worker-capsule.js"
     }
   },
   "files": [
@@ -28,7 +32,8 @@
   },
   "dependencies": {
     "@cloudflare/sandbox": "^0.7.0",
-    "@sandbank.dev/core": "workspace:*"
+    "@sandbank.dev/core": "workspace:*",
+    "@sandbank.dev/workspace": "workspace:*"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250214.0",
