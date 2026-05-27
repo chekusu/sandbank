@@ -255,7 +255,7 @@ async function runHarness(
         const response = await callDeepSeek(input, env, {
           apiKey,
           model,
-          fetchImpl: deps.fetchImpl ?? fetch,
+          fetchImpl: deps.fetchImpl ?? ((input, init) => fetch(input, init)),
           runId,
           workspace,
         })
@@ -344,7 +344,8 @@ async function runDynamicWorkerCapsule(options: {
   })
 
   const result = await capsule.invoke({
-    id: 'sandbank-harness-tool-v1',
+    // Workspace/runtime bindings are scoped to this run, so each harness capsule
+    // must get a fresh Dynamic Worker env instead of reusing loader.get(id).
     code: buildHarnessDynamicWorkerCode(),
     request: new Request('https://dynamic-worker.sandbank.dev/sandbank-harness/run', {
       method: 'POST',
