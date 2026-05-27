@@ -19,6 +19,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @sandbank.dev/core build
+      - run: pnpm --filter @sandbank.dev/workspace build
+      - run: pnpm --filter @sandbank.dev/db9 build
       - run: pnpm typecheck
 
   test:
