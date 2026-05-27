@@ -19,6 +19,12 @@ Commands:
   snapshot list <id>                List snapshots
   snapshot restore <id> <name>      Restore a snapshot
   snapshot delete <id> <name>       Delete a snapshot
+  workspace inspect                 Inspect local workspace store
+  workspace list [path]             List local workspace entries
+  workspace read <path>             Read from local workspace
+  workspace write <path> <data>     Write to local workspace
+  workspace watch [path] --replay   Replay local workspace events
+  workspace checkpoint [label]      Create a local workspace checkpoint
 
 Global options:
   --api-key <key>       API key for authentication

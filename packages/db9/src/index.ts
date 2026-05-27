@@ -1,6 +1,8 @@
 // Adapter
 export { Db9ServiceAdapter } from './adapter.js'
 export type { Db9AdapterConfig } from './adapter.js'
+export { Db9WorkspaceAdapter } from './workspace-adapter.js'
+export type { Db9SqlExecutor, Db9WorkspaceAdapterConfig } from './workspace-adapter.js'
 
 // Client
 export { Db9Client } from './client.js'

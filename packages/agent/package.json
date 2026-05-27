@@ -26,11 +26,15 @@
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
+  "dependencies": {
+    "@sandbank.dev/workspace": "workspace:*"
+  },
   "peerDependencies": {
     "@sandbank.dev/core": "workspace:*"
   },
   "devDependencies": {
     "@sandbank.dev/core": "workspace:*",
+    "@sandbank.dev/workspace": "workspace:*",
     "@sandbank.dev/relay": "workspace:*",
     "@types/node": "^22.15.0",
     "typescript": "^5.7.3",

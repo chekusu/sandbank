@@ -44,7 +44,8 @@
   },
   "dependencies": {
     "@sandbank.dev/cloud": "workspace:*",
-    "@sandbank.dev/core": "workspace:*"
+    "@sandbank.dev/core": "workspace:*",
+    "@sandbank.dev/workspace": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",

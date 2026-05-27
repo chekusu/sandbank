@@ -1,16 +1,16 @@
 {
-  "name": "@sandbank.dev/db9",
-  "version": "0.2.1",
-  "description": "db9.ai service adapter for Sandbank — serverless PostgreSQL for AI agents",
+  "name": "@sandbank.dev/workspace",
+  "version": "0.1.0",
+  "description": "Workspace protocol and in-memory adapter for Sandbank agents",
   "license": "MIT",
   "type": "module",
   "homepage": "https://sandbank.dev",
   "repository": {
     "type": "git",
     "url": "https://github.com/chekusu/sandbank.git",
-    "directory": "packages/db9"
+    "directory": "packages/workspace"
   },
-  "keywords": ["sandbox", "ai-agent", "db9", "postgres", "database", "service"],
+  "keywords": ["sandbox", "ai-agent", "workspace", "protocol"],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -22,12 +22,7 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
-    "test": "vitest run",
-    "test:e2e": "vitest run --config vitest.e2e.config.ts"
-  },
-  "dependencies": {
-    "@sandbank.dev/core": "workspace:*",
-    "@sandbank.dev/workspace": "workspace:*"
+    "test": "vitest run"
   },
   "devDependencies": {
     "typescript": "^5.7.3",

@@ -9,6 +9,7 @@ export default defineConfig({
       '@sandbank.dev/agent': resolve(__dirname, 'packages/agent/src/index.ts'),
       '@sandbank.dev/boxlite': resolve(__dirname, 'packages/boxlite/src/index.ts'),
       '@sandbank.dev/cloud': resolve(__dirname, 'packages/cloud/src/index.ts'),
+      '@sandbank.dev/workspace': resolve(__dirname, 'packages/workspace/src/index.ts'),
     },
   },
   test: {

@@ -477,6 +477,8 @@ Cloudflare 特别注意：
 5. 在 `packages/sandbank` CLI 增加 `sandbank workspace ...` 命令，用于创建、查看、watch、materialize、checkpoint。
 6. 选择 `visi0` 或 `codeben` 做第一个 dogfood，但不要把通用协议放进业务仓库。
 
+实施备注：本仓库第一阶段只落地通用 protocol、memory/db9 adapter、agent helper 与 CLI。第 6 步 dogfood 不在 sandbank 仓库内改业务代码；后续应在 `visi0` 或 `codeben` 中选择一个低风险任务，把 `@sandbank.dev/workspace` 作为外部依赖接入，并用真实 agent run 验证 task/artifact/checkpoint 流程。
+
 ### Phase 0：协议和评测
 
 先实现 provider-neutral `Workspace` protocol，并定义 capabilities。

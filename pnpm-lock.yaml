@@ -22,6 +22,10 @@ importers:
         version: 4.0.18(@opentelemetry/api@1.9.0)(@types/node@25.5.0)(tsx@4.21.0)
 
   packages/agent:
+    dependencies:
+      '@sandbank.dev/workspace':
+        specifier: workspace:*
+        version: link:../workspace
     devDependencies:
       '@sandbank.dev/core':
         specifier: workspace:*
@@ -135,6 +139,9 @@ importers:
       '@sandbank.dev/core':
         specifier: workspace:*
         version: link:../core
+      '@sandbank.dev/workspace':
+        specifier: workspace:*
+        version: link:../workspace
     devDependencies:
       typescript:
         specifier: ^5.7.3
@@ -177,6 +184,9 @@ importers:
       '@sandbank.dev/core':
         specifier: workspace:*
         version: link:../core
+      '@sandbank.dev/workspace':
+        specifier: workspace:*
+        version: link:../workspace
     devDependencies:
       '@types/node':
         specifier: ^25.5.0
@@ -200,6 +210,15 @@ importers:
       vitest:
         specifier: ^3.0.5
         version: 3.2.4(@types/node@22.19.11)(tsx@4.21.0)
+
+  packages/workspace:
+    devDependencies:
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.18
+        version: 4.0.18(@opentelemetry/api@1.9.0)(@types/node@25.5.0)(tsx@4.21.0)
 
 packages:
 
