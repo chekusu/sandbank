@@ -2,7 +2,16 @@
 export { Db9ServiceAdapter } from './adapter.js'
 export type { Db9AdapterConfig } from './adapter.js'
 export { Db9WorkspaceAdapter } from './workspace-adapter.js'
-export type { Db9SqlExecutor, Db9WorkspaceAdapterConfig } from './workspace-adapter.js'
+export type {
+  Db9BranchManager,
+  Db9FunctionInvoker,
+  Db9ScopedTokenIssuer,
+  Db9SearchOptions,
+  Db9SqlExecutor,
+  Db9WatchTransport,
+  Db9WorkspaceAdapterConfig,
+  Db9WorkspaceClient,
+} from './workspace-adapter.js'
 
 // Client
 export { Db9Client } from './client.js'
@@ -22,4 +31,12 @@ export { createDb9Service, createDb9Brain } from './convenience.js'
 export { EVENTS_SCHEMA, createDb9Observer } from './db9-observer.js'
 
 // Types
-export type { Db9Database, Db9SqlResult, Db9ApiError } from './types.js'
+export type {
+  Db9ApiError,
+  Db9Database,
+  Db9FunctionInvokeOptions,
+  Db9FunctionInvokeResult,
+  Db9ScopedToken,
+  Db9ScopedTokenRequest,
+  Db9SqlResult,
+} from './types.js'

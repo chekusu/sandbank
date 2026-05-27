@@ -2,6 +2,7 @@ import {
   WorkspaceError,
   type AgentOp,
   type Checkpoint,
+  type OpLogEntry,
   type ListOptions,
   type MoveOptions,
   type OpId,
@@ -14,6 +15,7 @@ import {
   type WorkspaceCapabilities,
   type WorkspaceData,
   type WorkspaceDiff,
+  type WorkspaceDiffEntry,
   type WorkspaceEntry,
   type WorkspaceEvent,
   type WorkspaceLock,
@@ -23,53 +25,139 @@ import {
   type WriteOptions,
 } from '@sandbank.dev/workspace'
 import { Db9Client, type Db9ClientConfig } from './client.js'
-import type { Db9SqlResult } from './types.js'
+import type {
+  Db9Database,
+  Db9FunctionInvokeOptions,
+  Db9FunctionInvokeResult,
+  Db9ScopedToken,
+  Db9ScopedTokenRequest,
+  Db9SqlResult,
+} from './types.js'
 
 export interface Db9SqlExecutor {
   executeSQL(dbId: string, query: string): Promise<Db9SqlResult>
 }
 
-export interface Db9WorkspaceAdapterConfig extends Partial<Db9ClientConfig> {
-  dbId: string
-  client?: Db9SqlExecutor
+export interface Db9FunctionInvoker {
+  invokeFunction(
+    dbId: string,
+    name: string,
+    input: unknown,
+    options?: Db9FunctionInvokeOptions,
+  ): Promise<Db9FunctionInvokeResult>
 }
 
-const db9WorkspaceCapabilities: WorkspaceCapabilities = {
-  list: true,
-  read: true,
-  write: true,
-  append: true,
-  remove: true,
-  move: false,
-  stat: true,
-  query: true,
-  transaction: false,
-  checkpoint: false,
-  diff: false,
-  rollback: false,
-  watch: true,
-  lock: false,
-  log: false,
-  sqlQuery: true,
-  nativeWatch: false,
-  branch: false,
-  fileAsTable: true,
-  vectorSearch: false,
-  functionRuntime: false,
-  provider: {
-    db9Fs9: true,
-    localWriteWatchOnly: true,
-  },
+export interface Db9ScopedTokenIssuer {
+  createScopedToken(dbId: string, request: Db9ScopedTokenRequest): Promise<Db9ScopedToken>
+}
+
+export interface Db9BranchManager {
+  createBranch(dbId: string, name: string): Promise<Db9Database>
+}
+
+export interface Db9WatchTransport {
+  watch(dbId: string, path: string, opts?: WatchOptions): AsyncIterable<WorkspaceEvent>
+}
+
+export type Db9WorkspaceClient =
+  Db9SqlExecutor
+  & Partial<Db9FunctionInvoker>
+  & Partial<Db9ScopedTokenIssuer>
+  & Partial<Db9BranchManager>
+
+export interface Db9SearchOptions {
+  text: string
+  mode?: 'fts' | 'vector'
+  path?: string
+  table?: string
+  column?: string
+  vector?: number[]
+  vectorColumn?: string
+  limit?: number
+}
+
+export interface Db9WorkspaceAdapterConfig extends Partial<Db9ClientConfig> {
+  dbId: string
+  client?: Db9WorkspaceClient
+  watchTransport?: Db9WatchTransport
+}
+
+function db9WorkspaceCapabilities(options: {
+  nativeWatch: boolean
+  functionRuntime: boolean
+  scopedTokens: boolean
+  branch: boolean
+}): WorkspaceCapabilities {
+  return {
+    list: true,
+    read: true,
+    write: true,
+    append: true,
+    remove: true,
+    move: false,
+    stat: true,
+    query: true,
+    transaction: false,
+    checkpoint: true,
+    diff: true,
+    rollback: true,
+    watch: true,
+    lock: false,
+    log: true,
+    sqlQuery: true,
+    nativeWatch: options.nativeWatch,
+    branch: options.branch,
+    fileAsTable: true,
+    vectorSearch: true,
+    functionRuntime: options.functionRuntime,
+    provider: {
+      db9Fs9: true,
+      watch: options.nativeWatch ? 'transport' : 'local-write-only',
+      checkpoint: 'fs9-snapshot',
+      rollback: 'fs9-snapshot',
+      branch: options.branch ? 'db9-rest' : 'unsupported',
+      ftsSearch: 'sql-entry',
+      vectorSearch: 'sql-entry',
+      functionRuntime: options.functionRuntime ? 'db9-function' : 'unsupported',
+      scopedToken: options.scopedTokens ? 'db9-rest' : 'unsupported',
+      functionFs9Scope: options.functionRuntime ? 'db9-function-option' : 'unsupported',
+    },
+  }
 }
 
 type Watcher = (event: WorkspaceEvent) => void
 
+interface Db9CheckpointFile {
+  path: string
+  data: string
+}
+
+interface Db9CheckpointSnapshot {
+  version: 1
+  checkpoint: Checkpoint
+  files: Db9CheckpointFile[]
+}
+
+type Db9WorkspaceQuery = WorkspaceQuery & {
+  kind?: WorkspaceQuery['kind'] | 'search'
+  text?: string
+  mode?: 'fts' | 'vector'
+  table?: string
+  column?: string
+  vector?: number[]
+  vectorColumn?: string
+}
+
 export class Db9WorkspaceAdapter implements WorkspaceAdapter {
   readonly id: string
   readonly kind = 'db9'
-  readonly capabilities = db9WorkspaceCapabilities
+  readonly capabilities: WorkspaceCapabilities
   private readonly dbId: string
   private readonly client: Db9SqlExecutor
+  private readonly functionInvoker?: Db9FunctionInvoker
+  private readonly scopedTokenIssuer?: Db9ScopedTokenIssuer
+  private readonly branchManager?: Db9BranchManager
+  private readonly watchTransport?: Db9WatchTransport
   private readonly watchers = new Set<Watcher>()
 
   constructor(config: Db9WorkspaceAdapterConfig) {
@@ -77,10 +165,31 @@ export class Db9WorkspaceAdapter implements WorkspaceAdapter {
     this.id = `db9:${config.dbId}`
     if (config.client) {
       this.client = config.client
+      this.functionInvoker = isFunctionInvoker(config.client) ? config.client : undefined
+      this.scopedTokenIssuer = isScopedTokenIssuer(config.client) ? config.client : undefined
+      this.branchManager = isBranchManager(config.client) ? config.client : undefined
+      this.watchTransport = config.watchTransport
+      this.capabilities = db9WorkspaceCapabilities({
+        nativeWatch: Boolean(this.watchTransport),
+        functionRuntime: Boolean(this.functionInvoker),
+        scopedTokens: Boolean(this.scopedTokenIssuer),
+        branch: Boolean(this.branchManager),
+      })
       return
     }
     if (!config.token) throw new Error('Missing db9 token for Db9WorkspaceAdapter')
-    this.client = new Db9Client({ token: config.token, baseUrl: config.baseUrl })
+    const client = new Db9Client({ token: config.token, baseUrl: config.baseUrl })
+    this.client = client
+    this.functionInvoker = client
+    this.scopedTokenIssuer = client
+    this.branchManager = client
+    this.watchTransport = config.watchTransport
+    this.capabilities = db9WorkspaceCapabilities({
+      nativeWatch: Boolean(this.watchTransport),
+      functionRuntime: true,
+      scopedTokens: true,
+      branch: true,
+    })
   }
 
   async list(path: string, opts: ListOptions = {}): Promise<WorkspaceEntry[]> {
@@ -139,14 +248,31 @@ export class Db9WorkspaceAdapter implements WorkspaceAdapter {
   }
 
   async query(expr: WorkspaceQuery): Promise<QueryResult> {
-    if (!expr.sql) {
-      if (expr.kind === 'files') {
-        const rows = await this.list(expr.path ?? '/', { recursive: true, limit: expr.limit })
+    const query = expr as Db9WorkspaceQuery
+    if (!query.sql) {
+      if (query.kind === 'search') {
+        if (!query.text) throw new WorkspaceError('INVALID_PATH', 'Db9WorkspaceAdapter search query requires text')
+        return this.search({
+          text: query.text,
+          mode: query.mode,
+          path: query.path,
+          table: query.table,
+          column: query.column,
+          vector: query.vector,
+          vectorColumn: query.vectorColumn,
+          limit: query.limit,
+        })
+      }
+      if (query.kind === 'checkpoints') {
+        return this.listCheckpoints(query.limit)
+      }
+      if (query.kind === 'files') {
+        const rows = await this.list(query.path ?? '/', { recursive: true, limit: query.limit })
         return { rows, rowCount: rows.length }
       }
       throw unsupported('non-SQL workspace query')
     }
-    const result = await this.exec(expr.sql)
+    const result = await this.exec(query.sql)
     const rows = rowsAsObjects(result)
     return {
       columns: result.columns,
@@ -159,20 +285,58 @@ export class Db9WorkspaceAdapter implements WorkspaceAdapter {
     throw unsupported('transaction')
   }
 
-  async checkpoint(_label?: string): Promise<Checkpoint> {
-    throw unsupported('checkpoint')
+  async checkpoint(label?: string): Promise<Checkpoint> {
+    const id = createId('checkpoint')
+    const checkpoint: Checkpoint = {
+      id,
+      ref: `db9-checkpoint:${id}`,
+      label,
+      createdAt: timestamp(),
+    }
+    const files = await this.snapshotFiles()
+    const snapshot: Db9CheckpointSnapshot = { version: 1, checkpoint, files }
+    await this.write(checkpointPath(checkpoint), JSON.stringify(snapshot, null, 2))
+    this.emit({ type: 'checkpoint', timestamp: checkpoint.createdAt, checkpoint })
+    return checkpoint
   }
 
-  async diff(_a: WorkspaceRef, _b: WorkspaceRef): Promise<WorkspaceDiff> {
-    throw unsupported('diff')
+  async diff(a: WorkspaceRef, b: WorkspaceRef): Promise<WorkspaceDiff> {
+    const from = await this.loadSnapshot(a)
+    const to = await this.loadSnapshot(b)
+    const fromFiles = new Map(from.files.map(file => [file.path, file]))
+    const toFiles = new Map(to.files.map(file => [file.path, file]))
+    const paths = new Set([...fromFiles.keys(), ...toFiles.keys()])
+    const entries: WorkspaceDiffEntry[] = []
+    for (const path of [...paths].sort()) {
+      const left = fromFiles.get(path)
+      const right = toFiles.get(path)
+      if (!left && right) entries.push({ path, kind: 'added', newSize: byteLength(right.data) })
+      else if (left && !right) entries.push({ path, kind: 'removed', oldSize: byteLength(left.data) })
+      if (left && right && left.data !== right.data) {
+        entries.push({ path, kind: 'modified', oldSize: byteLength(left.data), newSize: byteLength(right.data) })
+      }
+    }
+    return { from: from.checkpoint.ref, to: to.checkpoint.ref, entries }
   }
 
-  async rollback(_ref: WorkspaceRef): Promise<void> {
-    throw unsupported('rollback')
+  async rollback(ref: WorkspaceRef): Promise<void> {
+    const snapshot = await this.loadSnapshot(ref)
+    const desired = new Map(snapshot.files.map(file => [file.path, file.data]))
+    const current = await this.snapshotFiles()
+
+    for (const file of current) {
+      if (!desired.has(file.path)) await this.remove(file.path, { missingOk: true })
+    }
+    for (const [path, data] of desired) {
+      await this.write(path, data)
+    }
+    this.emit({ type: 'rollback', timestamp: timestamp() })
   }
 
   watch(path: string, opts: WatchOptions = {}): AsyncIterable<WorkspaceEvent> {
     const prefix = normalizePath(path)
+    if (this.watchTransport) return this.watchTransport.watch(this.dbId, prefix, opts)
+
     const queue: WorkspaceEvent[] = []
     const waits: Array<(result: IteratorResult<WorkspaceEvent>) => void> = []
     let done = false
@@ -219,12 +383,95 @@ export class Db9WorkspaceAdapter implements WorkspaceAdapter {
     throw unsupported('lock')
   }
 
-  async log(_op: AgentOp): Promise<OpId> {
-    throw unsupported('log')
+  async log(op: AgentOp): Promise<OpId> {
+    const entry: OpLogEntry = {
+      ...op,
+      id: createId('op'),
+      createdAt: timestamp(),
+    }
+    await this.append('/.sandbank/oplog.jsonl', `${JSON.stringify(entry)}\n`)
+    this.emit({ type: 'log', timestamp: entry.createdAt, op: entry, path: op.path, targetPath: op.targetPath })
+    return entry.id
+  }
+
+  async search(options: Db9SearchOptions): Promise<QueryResult> {
+    const limit = sqlLimit(options.limit)
+    const mode = options.mode ?? 'fts'
+    const path = normalizePath(options.path ?? '/')
+    if (mode === 'vector' && !options.vector?.length) {
+      throw new WorkspaceError('INVALID_PATH', 'Db9WorkspaceAdapter vector search requires a vector')
+    }
+    const sql = mode === 'vector'
+      ? `SELECT * FROM extensions.fs9_vector_search(${sqlString(path)}, ${sqlVector(options.vector ?? [])}, ${limit})`
+      : `SELECT * FROM extensions.fs9_search(${sqlString(path)}, ${sqlString(options.text)}, ${limit})`
+    const result = await this.exec(sql)
+    const rows = rowsAsObjects(result)
+    return { columns: result.columns, rows, rowCount: result.row_count }
+  }
+
+  async invokeFunction(
+    name: string,
+    input: unknown,
+    options: Db9FunctionInvokeOptions = {},
+  ): Promise<Db9FunctionInvokeResult> {
+    if (!this.functionInvoker) throw unsupported('function runtime')
+    return this.functionInvoker.invokeFunction(this.dbId, name, input, options)
+  }
+
+  async createScopedToken(request: Db9ScopedTokenRequest): Promise<Db9ScopedToken> {
+    if (!this.scopedTokenIssuer) throw unsupported('scoped token')
+    return this.scopedTokenIssuer.createScopedToken(this.dbId, request)
+  }
+
+  async createBranch(name: string): Promise<Db9Database> {
+    if (!this.branchManager) throw unsupported('branch')
+    return this.branchManager.createBranch(this.dbId, name)
   }
 
   private async exec(sql: string): Promise<Db9SqlResult> {
     return this.client.executeSQL(this.dbId, sql)
+  }
+
+  private async snapshotFiles(): Promise<Db9CheckpointFile[]> {
+    const entries = await this.list('/', { recursive: true })
+    const files: Db9CheckpointFile[] = []
+    for (const entry of entries) {
+      if (entry.type === 'directory') continue
+      if (entry.path.startsWith('/.sandbank/checkpoints/')) continue
+      const data = await this.read(entry.path)
+      files.push({ path: entry.path, data: dataToText(data) })
+    }
+    return files.sort((a, b) => a.path.localeCompare(b.path))
+  }
+
+  private async loadSnapshot(ref: WorkspaceRef): Promise<Db9CheckpointSnapshot> {
+    const checkpoint = typeof ref === 'string' ? { id: idFromCheckpointRef(ref), ref, createdAt: '' } : ref
+    if (!checkpoint.ref.startsWith('db9-checkpoint:')) {
+      throw new WorkspaceError('UNSUPPORTED', `Unsupported db9 checkpoint ref: ${checkpoint.ref}`)
+    }
+    const raw = await this.read(checkpointPath(checkpoint))
+    const parsed = JSON.parse(dataToText(raw)) as Db9CheckpointSnapshot
+    if (parsed.version !== 1 || !Array.isArray(parsed.files)) {
+      throw new WorkspaceError('CONFLICT', `Invalid db9 checkpoint snapshot: ${checkpoint.ref}`)
+    }
+    return parsed
+  }
+
+  private async listCheckpoints(limit?: number): Promise<QueryResult> {
+    const entries = await this.list('/.sandbank/checkpoints', { recursive: false }).catch(err => {
+      if (err instanceof WorkspaceError && err.code === 'NOT_FOUND') return [] as WorkspaceEntry[]
+      throw err
+    })
+    const checkpoints: Checkpoint[] = []
+    for (const entry of entries.slice(0, limit ?? entries.length)) {
+      try {
+        const snapshot = await this.loadSnapshot(`db9-checkpoint:${entry.name.replace(/\.json$/, '')}`)
+        checkpoints.push(snapshot.checkpoint)
+      } catch {
+        // Ignore malformed checkpoint files; direct read still reports an error if requested.
+      }
+    }
+    return { rows: checkpoints, rowCount: checkpoints.length }
   }
 
   private async syntheticEntry(path: string, data: WorkspaceData): Promise<WorkspaceEntry> {
@@ -245,6 +492,46 @@ export class Db9WorkspaceAdapter implements WorkspaceAdapter {
 
 function rowsAsObjects(result: Db9SqlResult): Record<string, unknown>[] {
   return result.rows.map(row => Object.fromEntries(result.columns.map((column, index) => [column, row[index]])))
+}
+
+function isFunctionInvoker(value: Db9WorkspaceClient): value is Db9WorkspaceClient & Db9FunctionInvoker {
+  return typeof value.invokeFunction === 'function'
+}
+
+function isScopedTokenIssuer(value: Db9WorkspaceClient): value is Db9WorkspaceClient & Db9ScopedTokenIssuer {
+  return typeof value.createScopedToken === 'function'
+}
+
+function isBranchManager(value: Db9WorkspaceClient): value is Db9WorkspaceClient & Db9BranchManager {
+  return typeof value.createBranch === 'function'
+}
+
+function checkpointPath(checkpoint: Pick<Checkpoint, 'id'>): string {
+  return `/.sandbank/checkpoints/${checkpoint.id}.json`
+}
+
+function idFromCheckpointRef(ref: string): string {
+  return ref.replace(/^db9-checkpoint:/, '')
+}
+
+function createId(prefix: string): string {
+  const random = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID().slice(0, 8)
+    : Math.random().toString(36).slice(2, 10)
+  return `${prefix}_${Date.now().toString(36)}_${random}`
+}
+
+function sqlLimit(limit: number | undefined): string {
+  const value = Math.max(1, Math.min(1000, Math.floor(limit ?? 20)))
+  return String(value)
+}
+
+function sqlVector(vector: number[]): string {
+  return sqlString(JSON.stringify(vector.filter(value => Number.isFinite(value))))
+}
+
+function byteLength(data: string): number {
+  return new TextEncoder().encode(data).byteLength
 }
 
 function rowToEntry(row: Record<string, unknown>): WorkspaceEntry {

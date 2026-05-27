@@ -128,6 +128,59 @@ describe('Db9Client', () => {
     )
   })
 
+  it('invokeFunction sends fs9 scope and input to the db9 function endpoint', async () => {
+    mockFetch.mockResolvedValueOnce(jsonResponse({ ok: true, output: { value: 1 } }))
+    const result = await client.invokeFunction('db-1', 'summarize', { path: '/workspace/a.md' }, {
+      fs9Scope: '/workspace:ro',
+      timeoutMs: 2500,
+      env: { MODE: 'test' },
+    })
+
+    expect(result.ok).toBe(true)
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://db9.ai/api/customer/databases/db-1/functions/summarize/invoke',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          input: { path: '/workspace/a.md' },
+          fs9_scope: '/workspace:ro',
+          timeout_ms: 2500,
+          env: { MODE: 'test' },
+        }),
+      }),
+    )
+  })
+
+  it('createScopedToken sends least-privilege scope data', async () => {
+    mockFetch.mockResolvedValueOnce(jsonResponse({
+      token: 'scoped-token',
+      expiresAt: '2026-05-27T00:00:00.000Z',
+    }))
+
+    const token = await client.createScopedToken('db-1', {
+      name: 'capsule',
+      expiresInSeconds: 60,
+      fs9Scope: '/workspace:rw',
+      sql: 'read',
+      functions: ['summarize'],
+    })
+
+    expect(token.token).toBe('scoped-token')
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://db9.ai/api/customer/databases/db-1/tokens',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          name: 'capsule',
+          expires_in_seconds: 60,
+          fs9_scope: '/workspace:rw',
+          sql: 'read',
+          functions: ['summarize'],
+        }),
+      }),
+    )
+  })
+
   it('uses default baseUrl when none provided', async () => {
     const defaultClient = new Db9Client({ token: 'tok' })
     mockFetch.mockResolvedValueOnce(jsonResponse([]))

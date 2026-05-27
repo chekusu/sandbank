@@ -19,6 +19,34 @@ export interface Db9SqlResult {
   row_count: number
 }
 
+export interface Db9FunctionInvokeOptions {
+  fs9Scope?: string
+  timeoutMs?: number
+  env?: Record<string, string>
+}
+
+export interface Db9FunctionInvokeResult {
+  ok?: boolean
+  status?: string
+  output?: unknown
+  result?: unknown
+  logs?: string[]
+}
+
+export interface Db9ScopedTokenRequest {
+  name?: string
+  expiresInSeconds?: number
+  fs9Scope?: string
+  sql?: 'none' | 'read' | 'write' | 'all'
+  functions?: string[]
+}
+
+export interface Db9ScopedToken {
+  token: string
+  expiresAt?: string
+  scope?: Record<string, unknown>
+}
+
 /** db9 API 响应：错误 */
 export interface Db9ApiError {
   error: string

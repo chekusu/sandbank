@@ -164,6 +164,7 @@ export type Capability =
   | 'snapshot'
   | 'port.expose'
   | 'services'
+  | 'dynamic.worker'
 
 // --- Capability Interfaces ---
 

@@ -184,6 +184,9 @@ importers:
       '@sandbank.dev/core':
         specifier: workspace:*
         version: link:../core
+      '@sandbank.dev/db9':
+        specifier: workspace:*
+        version: link:../db9
       '@sandbank.dev/workspace':
         specifier: workspace:*
         version: link:../workspace

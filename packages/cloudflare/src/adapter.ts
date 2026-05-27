@@ -17,6 +17,10 @@ import type {
 } from '@sandbank.dev/core'
 import { SandboxNotFoundError, ProviderError } from '@sandbank.dev/core'
 import { getSandbox, type Sandbox as CloudflareSandbox, type DirectoryBackup } from '@cloudflare/sandbox'
+import {
+  DynamicWorkerExecutionCapsule,
+  type DynamicWorkerCapsuleConfig,
+} from './dynamic-worker-capsule.js'
 
 // --- Configuration ---
 
@@ -35,6 +39,8 @@ export interface CloudflareAdapterConfig {
     credentials?: { accessKeyId: string; secretAccessKey: string }
     provider?: 'r2' | 's3' | 'gcs'
   }
+  /** Dynamic Worker execution capsule config. Durable state must remain outside the Dynamic Worker. */
+  dynamicWorker?: DynamicWorkerCapsuleConfig
 }
 
 // --- Internal tracking types ---
@@ -213,7 +219,17 @@ export class CloudflareAdapter implements SandboxAdapter {
     if (config.storage) {
       caps.push('volumes')
     }
+    if (config.dynamicWorker) {
+      caps.push('dynamic.worker' as Capability)
+    }
     this.capabilities = new Set(caps)
+  }
+
+  createDynamicWorkerCapsule(): DynamicWorkerExecutionCapsule {
+    if (!this.config.dynamicWorker) {
+      throw new ProviderError('cloudflare', new Error('Dynamic Worker loader is not configured'))
+    }
+    return new DynamicWorkerExecutionCapsule(this.config.dynamicWorker)
   }
 
   private getSnapshotsFor(sandboxId: string): Map<string, DirectoryBackup> {

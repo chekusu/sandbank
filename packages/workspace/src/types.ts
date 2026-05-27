@@ -74,8 +74,14 @@ export interface MoveOptions {
 
 export interface WorkspaceQuery {
   sql?: string
-  kind?: 'files' | 'log' | 'checkpoints'
+  kind?: 'files' | 'log' | 'checkpoints' | 'search'
   path?: string
+  text?: string
+  mode?: 'fts' | 'vector'
+  table?: string
+  column?: string
+  vector?: number[]
+  vectorColumn?: string
   where?: Record<string, unknown>
   limit?: number
 }

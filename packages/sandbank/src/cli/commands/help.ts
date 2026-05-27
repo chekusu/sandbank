@@ -25,6 +25,7 @@ Commands:
   workspace write <path> <data>     Write to local workspace
   workspace watch [path] --replay   Replay local workspace events
   workspace checkpoint [label]      Create a local workspace checkpoint
+  harness-api [--port <n>]          Start DB-native harness API
 
 Global options:
   --api-key <key>       API key for authentication

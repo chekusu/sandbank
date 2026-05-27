@@ -205,6 +205,23 @@ pnpm test:conformance
 pnpm typecheck
 ```
 
+### DB-native Harness API
+
+On the `db-native-agent-harness` branch, the `sandbank` CLI and Worker entrypoint expose a chatw.dev-compatible harness API backed by the Agent Supervisor, db9 workspace storage, and DeepSeek V4 Pro:
+
+```bash
+DB9_DATABASE_ID=... DB9_TOKEN=... DEEPSEEK_API_KEY=... \
+  vas dev sandbank-harness pnpm --filter ./packages/sandbank exec tsx src/cli/index.ts harness-api --host 0.0.0.0 --port 8789
+```
+
+Routes:
+
+- `GET /health`
+- `GET /api/db-native-agent-harness/capabilities`
+- `POST /api/db-native-agent-harness/stream`
+
+The stream emits chatw.dev SSE events, persists run input/output under `/runs/...`, records supervisor state/audit data under `/agents/...`, creates a checkpoint when the workspace backend supports it, and defaults to `deepseek-v4-pro`. The Worker-compatible entrypoint is exported as `sandbank/harness-worker`; the Node CLI is for service hosting through `vas dev` or an equivalent deployment path, not as a localhost-only preview.
+
 ### Running Integration Tests
 
 Integration tests hit real APIs and are gated by environment variables:

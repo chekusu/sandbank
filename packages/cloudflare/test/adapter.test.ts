@@ -74,6 +74,19 @@ describe('CloudflareAdapter', () => {
       expect(adapter.capabilities).toEqual(new Set(['exec.stream', 'terminal', 'port.expose', 'snapshot', 'volumes']))
     })
 
+    it('should include dynamic.worker when a Dynamic Worker loader is configured', () => {
+      const adapter = new CloudflareAdapter(createConfig({
+        dynamicWorker: {
+          loader: {
+            load: vi.fn(),
+            get: vi.fn(),
+          },
+        },
+      }))
+      expect(adapter.capabilities).toEqual(new Set(['exec.stream', 'terminal', 'port.expose', 'snapshot', 'dynamic.worker']))
+      expect(adapter.createDynamicWorkerCapsule()).toBeTruthy()
+    })
+
     it('should have name "cloudflare"', () => {
       const adapter = new CloudflareAdapter(createConfig())
       expect(adapter.name).toBe('cloudflare')
