@@ -12,6 +12,7 @@ export default defineConfig({
       '@sandbank.dev/cloudflare/dynamic-worker-capsule': resolve(__dirname, 'packages/cloudflare/src/dynamic-worker-capsule.ts'),
       '@sandbank.dev/cloudflare': resolve(__dirname, 'packages/cloudflare/src/index.ts'),
       '@sandbank.dev/db9': resolve(__dirname, 'packages/db9/src/index.ts'),
+      '@sandbank.dev/e2b': resolve(__dirname, 'packages/e2b/src/index.ts'),
       '@sandbank.dev/workspace': resolve(__dirname, 'packages/workspace/src/index.ts'),
       'cloudflare:workers': resolve(__dirname, 'test/stubs/cloudflare-workers.ts'),
     },

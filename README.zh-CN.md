@@ -37,11 +37,11 @@ await provider.destroy(sandbox.id)
 │  @sandbank.dev/relay        多 Agent 通信中枢             │
 ├──────────────────────────────────────────────────────┤
 │  @sandbank.dev/daytona  @sandbank.dev/flyio  @sandbank.dev/cloudflare  │
-│  @sandbank.dev/boxlite                                   │
+│  @sandbank.dev/boxlite  @sandbank.dev/e2b                 │
 │  Provider 适配器                                      │
 ├──────────────────────────────────────────────────────┤
 │  Daytona    Fly.io Machines    Cloudflare Workers     │
-│  BoxLite (自托管 Docker)                              │
+│  BoxLite (自托管 Docker)    E2B Cloud Sandboxes        │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -55,6 +55,7 @@ await provider.destroy(sandbox.id)
 | [`@sandbank.dev/flyio`](./packages/flyio) | Fly.io Machines 适配器 |
 | [`@sandbank.dev/cloudflare`](./packages/cloudflare) | Cloudflare Workers 适配器 |
 | [`@sandbank.dev/boxlite`](./packages/boxlite) | BoxLite 自托管 Docker 适配器 |
+| [`@sandbank.dev/e2b`](./packages/e2b) | E2B 云沙箱适配器 |
 | [`@sandbank.dev/relay`](./packages/relay) | WebSocket 中继，用于多 Agent 通信 |
 | [`@sandbank.dev/agent`](./packages/agent) | 沙箱内 Agent 轻量客户端 |
 
@@ -64,41 +65,43 @@ await provider.destroy(sandbox.id)
 
 所有 Provider 都必须实现的最小契约：
 
-| 操作 | Daytona | Fly.io | Cloudflare | BoxLite |
-|------|:-------:|:------:|:----------:|:-------:|
-| 创建 / 销毁 | ✅ | ✅ | ✅ | ✅ |
-| 列出沙箱 | ✅ | ✅ | ✅ | ✅ |
-| 执行命令 | ✅ | ✅ | ✅ | ✅ |
-| 读写文件 | ✅ | ✅ | ✅ | ✅ |
-| Skill 注入 | ✅ | ✅ | ✅ | ✅ |
+| 操作 | Daytona | Fly.io | Cloudflare | BoxLite | E2B |
+|------|:-------:|:------:|:----------:|:-------:|:---:|
+| 创建 / 销毁 | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 列出沙箱 | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 执行命令 | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 读写文件 | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Skill 注入 | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 ### 扩展能力
 
 能力是可选的。通过 `withVolumes(provider)`、`withPortExpose(sandbox)` 等函数在运行时安全检测并访问。
 
-| 能力 | Daytona | Fly.io | Cloudflare | BoxLite | 说明 |
-|------|:-------:|:------:|:----------:|:-------:|------|
-| `volumes` | ✅ | ✅ | ⚠️* | ❌ | 持久卷管理 |
-| `port.expose` | ✅ | ✅ | ⚠️** | ✅ | 将沙箱端口暴露到公网 |
-| `exec.stream` | ❌ | ❌ | ✅ | ✅ | 实时流式输出 stdout/stderr |
-| `snapshot` | ❌ | ❌ | ✅ | ✅ | 沙箱状态快照与恢复 |
-| `terminal` | ✅ | ✅ | ✅ | ✅ | 交互式 Web 终端 (ttyd) |
-| `sleep` | ❌ | ❌ | ❌ | ✅ | 休眠与唤醒 |
-| `skills` | ✅ | ✅ | ✅ | ✅ | 加载并注入 Skill 定义到沙箱 |
+| 能力 | Daytona | Fly.io | Cloudflare | BoxLite | E2B | 说明 |
+|------|:-------:|:------:|:----------:|:-------:|:---:|------|
+| `volumes` | ✅ | ✅ | ⚠️* | ❌ | ⚠️*** | 持久卷管理 |
+| `port.expose` | ✅ | ✅ | ⚠️** | ✅ | ✅ | 将沙箱端口暴露到公网 |
+| `exec.stream` | ❌ | ❌ | ✅ | ✅ | ❌ | 实时流式输出 stdout/stderr |
+| `snapshot` | ❌ | ❌ | ✅ | ✅ | ❌ | 沙箱状态快照与恢复 |
+| `terminal` | ✅ | ✅ | ✅ | ✅ | ✅ | 交互式 Web 终端 (ttyd) |
+| `sleep` | ❌ | ❌ | ❌ | ✅ | ✅ | 休眠与唤醒 |
+| `skills` | ✅ | ✅ | ✅ | ✅ | ✅ | 加载并注入 Skill 定义到沙箱 |
 
 \* Cloudflare 的 `volumes` 需要在适配器配置中启用 `storage` 选项。
 
 \*\* Cloudflare 保留了 3000 端口用于沙箱控制面板，可用范围为 1024–65535（不含 3000）。
 
+\*\*\* E2B volumes 目前需要 E2B volume beta 权限。Sandbank 会用卷 `id` 连接 E2B `Volume` 后挂载。
+
 ### Provider 特性对比
 
-| | Daytona | Fly.io | Cloudflare | BoxLite |
-|---|---------|--------|------------|---------|
-| **运行时** | 完整 VM | Firecracker 微虚拟机 | V8 隔离 + 容器 | Docker 容器 |
-| **冷启动** | ~10s | ~3-5s | ~1s | ~2-5s |
-| **文件 I/O** | 原生 SDK | 通过 exec (base64) | 原生 SDK | 通过 exec (base64) |
-| **区域** | 多区域 | 多区域 | 全球边缘 | 自托管 |
-| **外部依赖** | `@daytonaio/sdk` | 无 (纯 fetch) | `@cloudflare/sandbox` | BoxLite API |
+| | Daytona | Fly.io | Cloudflare | BoxLite | E2B |
+|---|---------|--------|------------|---------|-----|
+| **运行时** | 完整 VM | Firecracker 微虚拟机 | V8 隔离 + 容器 | Docker 容器 | E2B 云沙箱 |
+| **冷启动** | ~10s | ~3-5s | ~1s | ~2-5s | Provider 管理 |
+| **文件 I/O** | 原生 SDK | 通过 exec (base64) | 原生 SDK | 通过 exec (base64) | 原生 SDK |
+| **区域** | 多区域 | 多区域 | 全球边缘 | 自托管 | E2B 管理 |
+| **外部依赖** | `@daytonaio/sdk` | 无 (纯 fetch) | `@cloudflare/sandbox` | BoxLite API | `e2b` |
 
 ## 多 Agent 会话
 
@@ -152,7 +155,7 @@ await session.complete({ status: 'success', summary: '完成了 5 个 API 端点
 
 ```bash
 # 安装
-pnpm add @sandbank.dev/core @sandbank.dev/daytona  # 或 @sandbank.dev/flyio、@sandbank.dev/cloudflare
+pnpm add @sandbank.dev/core @sandbank.dev/daytona  # 或 @sandbank.dev/flyio、@sandbank.dev/cloudflare、@sandbank.dev/e2b
 
 # 配置 Provider
 export DAYTONA_API_KEY=your-key

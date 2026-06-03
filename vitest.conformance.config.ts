@@ -6,6 +6,7 @@ export default defineConfig({
     alias: {
       '@sandbank.dev/core': path.resolve(__dirname, 'packages/core/src/index.ts'),
       '@sandbank.dev/daytona': path.resolve(__dirname, 'packages/daytona/src/index.ts'),
+      '@sandbank.dev/e2b': path.resolve(__dirname, 'packages/e2b/src/index.ts'),
       '@sandbank.dev/flyio': path.resolve(__dirname, 'packages/flyio/src/index.ts'),
     },
   },

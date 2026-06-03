@@ -45,7 +45,7 @@
 ## P4 — 未来 Provider
 
 - [x] BoxLite — 裸金属 KVM/HVF 微型 VM（exec.stream + snapshot + sleep + terminal + port.expose）
-- [ ] E2B — 评估 API 兼容性
+- [x] E2B — core contract + volumes + sleep + terminal + port.expose
 - [ ] Modal — 评估是否适合作为 sandbox provider
 - [ ] Docker local — 本地开发用，不依赖云服务
 

@@ -1,0 +1,34 @@
+{
+  "name": "@sandbank.dev/e2b",
+  "version": "0.1.0",
+  "description": "E2B cloud sandbox adapter for Sandbank",
+  "license": "MIT",
+  "type": "module",
+  "homepage": "https://sandbank.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chekusu/sandbank.git",
+    "directory": "packages/e2b"
+  },
+  "keywords": ["sandbox", "ai-agent", "e2b", "cloud"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@sandbank.dev/core": "workspace:*",
+    "e2b": "^2.26.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3",
+    "vitest": "^4.0.18"
+  }
+}

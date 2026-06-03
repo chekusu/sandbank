@@ -9,6 +9,7 @@
  *   E2E_WORKER_URL                                → Cloudflare provider (via HTTP adapter)
  *   FLY_API_TOKEN + FLY_APP_NAME                  → Fly.io provider
  *   BOXLITE_API_TOKEN + BOXLITE_API_URL           → BoxLite provider
+ *   E2B_API_KEY + E2B_TEMPLATE (optional)          → E2B provider
  *
  * - None set     → all tests skip
  * - One set      → that provider's conformance tests run; hot-swap skips
@@ -22,6 +23,7 @@ import { CloudflareHttpAdapter } from './cloudflare-http-adapter.js'
 interface ProviderEntry {
   name: string
   provider: SandboxProvider
+  image?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -69,6 +71,23 @@ if (process.env.BOXLITE_API_URL && (process.env.BOXLITE_API_TOKEN || (process.en
   providers.push({ name: 'boxlite', provider: createProvider(adapter) })
 }
 
+if (process.env.E2B_API_KEY) {
+  const { E2BAdapter } = await import('@sandbank.dev/e2b')
+  const adapter = new E2BAdapter({
+    apiKey: process.env.E2B_API_KEY,
+    template: process.env.E2B_TEMPLATE,
+  })
+  providers.push({
+    name: 'e2b',
+    provider: createProvider(adapter),
+    image: process.env.E2B_TEMPLATE ?? 'base',
+  })
+}
+
+function createSandboxFor(entry: ProviderEntry): Promise<Sandbox> {
+  return entry.provider.create({ image: entry.image ?? 'ubuntu:24.04' })
+}
+
 // ---------------------------------------------------------------------------
 // Parameterized conformance tests — each provider runs the same suite
 // ---------------------------------------------------------------------------
@@ -78,7 +97,7 @@ for (const entry of providers) {
     let sandbox: Sandbox
 
     beforeAll(async () => {
-      sandbox = await entry.provider.create({ image: 'ubuntu:24.04' })
+      sandbox = await createSandboxFor(entry)
     })
 
     afterAll(async () => {
@@ -181,7 +200,7 @@ for (const entry of providers) {
     // -- Lifecycle --
 
     it('destroy is idempotent (double destroy does not throw)', async () => {
-      const ephemeral = await entry.provider.create({ image: 'ubuntu:24.04' })
+      const ephemeral = await createSandboxFor(entry)
       await entry.provider.destroy(ephemeral.id)
       // Second destroy should not throw
       await expect(entry.provider.destroy(ephemeral.id)).resolves.not.toThrow()
@@ -294,8 +313,8 @@ describe('hot-swap: switch providers mid-session', () => {
 
   beforeAll(async () => {
     if (!needsBoth) return
-    sandboxA = await providers[0].provider.create({ image: 'ubuntu:24.04' })
-    sandboxB = await providers[1].provider.create({ image: 'ubuntu:24.04' })
+    sandboxA = await createSandboxFor(providers[0])
+    sandboxB = await createSandboxFor(providers[1])
   })
 
   afterAll(async () => {
@@ -378,7 +397,7 @@ describe('hot-swap: switch providers mid-session', () => {
 
 if (providers.length === 0) {
   describe('conformance (skipped)', () => {
-    it('no providers configured — set DAYTONA_API_KEY, E2E_WORKER_URL, FLY_API_TOKEN + FLY_APP_NAME, and/or BOXLITE_API_TOKEN + BOXLITE_API_URL', () => {
+    it('no providers configured — set DAYTONA_API_KEY, E2E_WORKER_URL, FLY_API_TOKEN + FLY_APP_NAME, BOXLITE_API_TOKEN + BOXLITE_API_URL, and/or E2B_API_KEY', () => {
       expect(true).toBe(true)
     })
   })

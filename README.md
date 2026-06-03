@@ -37,13 +37,14 @@ Swap `DaytonaAdapter` for `FlyioAdapter` or `CloudflareAdapter` — zero code ch
 │  @sandbank.dev/relay        Multi-agent Communication    │
 ├──────────────────────────────────────────────────────┤
 │  @sandbank.dev/daytona  @sandbank.dev/flyio  @sandbank.dev/cloudflare  │
-│  @sandbank.dev/boxlite                                   │
+│  @sandbank.dev/boxlite  @sandbank.dev/e2b                 │
 │  Provider Adapters (Compute)                         │
 ├──────────────────────────────────────────────────────┤
 │  @sandbank.dev/db9       Service Adapter (Data)      │
 ├──────────────────────────────────────────────────────┤
 │  Daytona    Fly.io Machines    Cloudflare Workers     │
-│  BoxLite (self-hosted Docker)    db9.ai (PostgreSQL)  │
+│  BoxLite (self-hosted Docker)    E2B Cloud Sandboxes   │
+│  db9.ai (PostgreSQL)                                  │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -57,6 +58,7 @@ Swap `DaytonaAdapter` for `FlyioAdapter` or `CloudflareAdapter` — zero code ch
 | [`@sandbank.dev/flyio`](./packages/flyio) | Fly.io Machines adapter |
 | [`@sandbank.dev/cloudflare`](./packages/cloudflare) | Cloudflare Workers adapter |
 | [`@sandbank.dev/boxlite`](./packages/boxlite) | BoxLite self-hosted Docker adapter |
+| [`@sandbank.dev/e2b`](./packages/e2b) | E2B cloud sandbox adapter |
 | [`@sandbank.dev/db9`](./packages/db9) | db9.ai serverless PostgreSQL adapter (ServiceProvider) |
 | [`@sandbank.dev/relay`](./packages/relay) | WebSocket relay for multi-agent communication |
 | [`@sandbank.dev/agent`](./packages/agent) | Lightweight client for agents running inside sandboxes |
@@ -67,42 +69,44 @@ Swap `DaytonaAdapter` for `FlyioAdapter` or `CloudflareAdapter` — zero code ch
 
 All providers implement these — the minimum contract:
 
-| Operation | Daytona | Fly.io | Cloudflare | BoxLite |
-|-----------|:-------:|:------:|:----------:|:-------:|
-| Create / Destroy | ✅ | ✅ | ✅ | ✅ |
-| List sandboxes | ✅ | ✅ | ✅ | ✅ |
-| Execute commands | ✅ | ✅ | ✅ | ✅ |
-| Read / Write files | ✅ | ✅ | ✅ | ✅ |
-| Skill injection | ✅ | ✅ | ✅ | ✅ |
+| Operation | Daytona | Fly.io | Cloudflare | BoxLite | E2B |
+|-----------|:-------:|:------:|:----------:|:-------:|:---:|
+| Create / Destroy | ✅ | ✅ | ✅ | ✅ | ✅ |
+| List sandboxes | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Execute commands | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Read / Write files | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Skill injection | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 ### Extended Capabilities
 
 Capabilities are opt-in. Use `withVolumes(provider)`, `withPortExpose(sandbox)`, etc. to safely check and access them at runtime.
 
-| Capability | Daytona | Fly.io | Cloudflare | BoxLite | db9 | Description |
-|------------|:-------:|:------:|:----------:|:-------:|:---:|-------------|
-| `volumes` | ✅ | ✅ | ⚠️* | ❌ | — | Persistent volume management |
-| `port.expose` | ✅ | ✅ | ⚠️** | ✅ | — | Expose sandbox ports to the internet |
-| `exec.stream` | ❌ | ❌ | ✅ | ✅ | — | Stream stdout/stderr in real-time |
-| `snapshot` | ❌ | ❌ | ✅ | ✅ | — | Snapshot and restore sandbox state |
-| `terminal` | ✅ | ✅ | ✅ | ✅ | — | Interactive web terminal (ttyd) |
-| `sleep` | ❌ | ❌ | ❌ | ✅ | — | Hibernate and wake sandboxes |
-| `skills` | ✅ | ✅ | ✅ | ✅ | — | Load and inject skill definitions into sandboxes |
-| `services` | ❌ | ❌ | ❌ | ❌ | ✅ | Bind data services (PostgreSQL) to sandboxes |
+| Capability | Daytona | Fly.io | Cloudflare | BoxLite | E2B | db9 | Description |
+|------------|:-------:|:------:|:----------:|:-------:|:---:|:---:|-------------|
+| `volumes` | ✅ | ✅ | ⚠️* | ❌ | ⚠️*** | — | Persistent volume management |
+| `port.expose` | ✅ | ✅ | ⚠️** | ✅ | ✅ | — | Expose sandbox ports to the internet |
+| `exec.stream` | ❌ | ❌ | ✅ | ✅ | ❌ | — | Stream stdout/stderr in real-time |
+| `snapshot` | ❌ | ❌ | ✅ | ✅ | ❌ | — | Snapshot and restore sandbox state |
+| `terminal` | ✅ | ✅ | ✅ | ✅ | ✅ | — | Interactive web terminal (ttyd) |
+| `sleep` | ❌ | ❌ | ❌ | ✅ | ✅ | — | Hibernate and wake sandboxes |
+| `skills` | ✅ | ✅ | ✅ | ✅ | ✅ | — | Load and inject skill definitions into sandboxes |
+| `services` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | Bind data services (PostgreSQL) to sandboxes |
 
 \* Cloudflare `volumes` requires `storage` option in adapter config.
 
 \*\* Cloudflare reserves port 3000 for its sandbox control plane. Use any port in 1024–65535 except 3000.
 
+\*\*\* E2B volumes require E2B volume beta access. Sandbank mounts volumes by connecting the Sandbank volume `id` to an E2B `Volume`.
+
 ### Provider Characteristics
 
-| | Daytona | Fly.io | Cloudflare | BoxLite |
-|---|---------|--------|------------|---------|
-| **Runtime** | Full VM | Firecracker microVM | V8 isolate + container | Docker container |
-| **Cold start** | ~10s | ~3-5s | ~1s | ~2-5s |
-| **File I/O** | Native SDK | Via exec (base64) | Native SDK | Via exec (base64) |
-| **Regions** | Multi | Multi | Global edge | Self-hosted |
-| **External deps** | `@daytonaio/sdk` | None (pure fetch) | `@cloudflare/sandbox` | BoxLite API |
+| | Daytona | Fly.io | Cloudflare | BoxLite | E2B |
+|---|---------|--------|------------|---------|-----|
+| **Runtime** | Full VM | Firecracker microVM | V8 isolate + container | Docker container | E2B cloud sandbox |
+| **Cold start** | ~10s | ~3-5s | ~1s | ~2-5s | Provider-managed |
+| **File I/O** | Native SDK | Via exec (base64) | Native SDK | Via exec (base64) | Native SDK |
+| **Regions** | Multi | Multi | Global edge | Self-hosted | E2B managed |
+| **External deps** | `@daytonaio/sdk` | None (pure fetch) | `@cloudflare/sandbox` | BoxLite API | `e2b` |
 
 ## Multi-Agent Sessions
 
@@ -156,7 +160,7 @@ await session.complete({ status: 'success', summary: 'Built 5 API endpoints' })
 
 ```bash
 # Install
-pnpm add @sandbank.dev/core @sandbank.dev/daytona  # or @sandbank.dev/flyio, @sandbank.dev/cloudflare
+pnpm add @sandbank.dev/core @sandbank.dev/daytona  # or @sandbank.dev/flyio, @sandbank.dev/cloudflare, @sandbank.dev/e2b
 
 # Set up provider
 export DAYTONA_API_KEY=your-key
