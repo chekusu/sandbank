@@ -1,6 +1,7 @@
 import { WorkerEntrypoint } from 'cloudflare:workers'
 import {
   createDbNativeAgentHarnessHandler,
+  type DbNativeAgentHarnessDeps,
   type DbNativeAgentHarnessEnv,
   type HarnessExecutionCapsule,
   type HarnessExecutionEvent,
@@ -177,12 +178,14 @@ export default {
     request: Request,
     env: DbNativeAgentHarnessWorkerEnv,
     ctx: ExecutionContext = fallbackExecutionContext,
+    deps: DbNativeAgentHarnessDeps = {},
   ): Promise<Response> {
     const loader = env.SANDBANK_DYNAMIC_WORKER_LOADER ?? env.LOADER
     return createDbNativeAgentHarnessHandler(env, loader
       ? {
+        ...deps,
         createExecutionCapsule: () => createCloudflareExecutionCapsule(loader, ctx),
       }
-      : {}).fetch(request)
+      : deps).fetch(request)
   },
 }

@@ -1,8 +1,12 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MemoryWorkspaceAdapter, type WorkspaceAdapter } from '@sandbank.dev/workspace'
 import { createDbNativeAgentHarnessHandler } from './harness-api.js'
 import { startDbNativeAgentHarnessServer } from './harness-node.js'
 import harnessWorker from './harness-worker.js'
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 describe('createDbNativeAgentHarnessHandler', () => {
   it('streams chatw events while persisting a db-native run in the workspace', async () => {
@@ -63,7 +67,7 @@ describe('createDbNativeAgentHarnessHandler', () => {
 
   it('invokes a configured Dynamic Worker capsule for the run and forwards its events', async () => {
     const workspace = new MemoryWorkspaceAdapter(undefined, { id: 'db9:test' })
-    const fetchImpl = vi.fn(async () => {
+    const fetchImpl = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) => {
       const encoder = new TextEncoder()
       return new Response(new ReadableStream({
         start(controller) {
@@ -155,7 +159,7 @@ describe('createDbNativeAgentHarnessHandler', () => {
 
   it('does not expose model reasoning chunks as visible chat text', async () => {
     const workspace = new MemoryWorkspaceAdapter(undefined, { id: 'db9:test' })
-    const fetchImpl = vi.fn(async () => {
+    const fetchImpl = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) => {
       const encoder = new TextEncoder()
       return new Response(new ReadableStream({
         start(controller) {
@@ -188,6 +192,206 @@ describe('createDbNativeAgentHarnessHandler', () => {
     expect(body).toContain('"text":"final answer"')
     expect(body).not.toContain('hidden plan')
     await expect(workspace.read('/runs/run_reasoning/assistant.md')).resolves.toBe('final answer')
+  })
+
+  it('uses attachment context and falls back when streamed model chunks contain no visible text', async () => {
+    const workspace = new MemoryWorkspaceAdapter(undefined, { id: 'db9:test' })
+    const fetchImpl = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) => {
+      const encoder = new TextEncoder()
+      return new Response(new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode('data: not-json\n\n'))
+          controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"reasoning_content":"hidden only"}}]}\n\n'))
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+          controller.close()
+        },
+      }))
+    })
+    const handler = createDbNativeAgentHarnessHandler({
+      DB9_DATABASE_ID: 'db-test',
+      OPENAI_API_KEY: 'openai-key',
+      CHATW_DEEPSEEK_USE_OPENAI_ENV: '1',
+      OPENAI_BASE_URL: 'https://openai-compatible.example',
+      DEEPSEEK_MODEL: 'deepseek-custom',
+    }, {
+      createWorkspace: async () => workspace,
+      fetchImpl,
+      now: () => new Date('2026-05-27T00:00:00.000Z'),
+      id: () => 'run_empty_stream',
+    })
+
+    const response = await handler.fetch(new Request('https://sandbank.dev/api/chatw/stream', {
+      method: 'POST',
+      body: JSON.stringify({
+        message: '@agent inspect uploaded context',
+        attachments: [{}],
+      }),
+    }))
+
+    const body = await response.text()
+    const requestBody = JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body)) as { model: string; messages: Array<{ content: string }> }
+
+    expect(requestBody.model).toBe('deepseek-custom')
+    expect(String(fetchImpl.mock.calls[0]?.[0])).toBe('https://openai-compatible.example/chat/completions')
+    expect(requestBody.messages.at(-1)?.content).toContain('untitled (application/octet-stream, 0 bytes)')
+    expect(body).toContain('DeepSeek V4 Pro returned an empty streamed response.')
+    await expect(workspace.read('/runs/run_empty_stream/assistant.md')).resolves.toBe('DeepSeek V4 Pro returned an empty streamed response.')
+  })
+
+  it('reports missing DeepSeek credentials after workspace setup', async () => {
+    const workspace = new MemoryWorkspaceAdapter(undefined, { id: 'db9:test' })
+    const handler = createDbNativeAgentHarnessHandler({
+      DB9_DATABASE_ID: 'db-test',
+    }, {
+      createWorkspace: async () => workspace,
+      id: () => 'run_missing_model_key',
+      now: () => new Date('2026-05-27T00:00:00.000Z'),
+    })
+
+    const response = await handler.fetch(new Request('https://sandbank.dev/api/db-native-agent-harness/stream', {
+      method: 'POST',
+      body: JSON.stringify({ message: '@agent needs model key' }),
+    }))
+
+    const body = await response.text()
+
+    expect(body).toContain('missing_deepseek_api_key')
+    expect(body).toContain('"status":"failed"')
+  })
+
+  it('uses global fetch fallback and handles sparse model stream blocks', async () => {
+    const workspace = new MemoryWorkspaceAdapter(undefined, { id: 'db9:test' })
+    const globalFetch = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) => {
+      const encoder = new TextEncoder()
+      return new Response(new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode('event: ping\n\n'))
+          controller.enqueue(encoder.encode('data: {"foo":true}\n\n'))
+          controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"global fetch answer"}}]}\n\n'))
+          controller.close()
+        },
+      }))
+    })
+    vi.stubGlobal('fetch', globalFetch)
+    const handler = createDbNativeAgentHarnessHandler({
+      DB9_DATABASE_ID: 'db-test',
+      CHATW_DEEPSEEK_API_KEY: 'chatw-key',
+      CHATW_DEEPSEEK_BASE_URL: 'https://chatw-deepseek.example',
+      CHATW_DEEPSEEK_MODEL: 'chatw-deepseek',
+    }, {
+      createWorkspace: async () => workspace,
+      id: () => 'run_global_fetch',
+      now: () => new Date('2026-05-27T00:00:00.000Z'),
+    })
+
+    const response = await handler.fetch(new Request('https://sandbank.dev/api/db-native-agent-harness/stream', {
+      method: 'POST',
+      body: JSON.stringify({
+        history: [
+          { role: 'system', content: 'ignored' },
+          { role: 'assistant', content: 'assistant memory' },
+          { role: 'user', content: 'old user message' },
+          { role: 'user', content: 'latest user message' },
+        ],
+      }),
+    }))
+
+    const body = await response.text()
+    const requestBody = JSON.parse(String(globalFetch.mock.calls[0]?.[1]?.body)) as { model: string; messages: Array<{ role: string; content: string }> }
+
+    expect(String(globalFetch.mock.calls[0]?.[0])).toBe('https://chatw-deepseek.example/chat/completions')
+    expect(requestBody.model).toBe('chatw-deepseek')
+    expect(requestBody.messages.map(message => message.role)).toEqual(['system', 'assistant', 'user', 'user'])
+    expect(requestBody.messages.at(-1)?.content).toBe('Use the DB-native harness.')
+    expect(body).toContain('"text":"global fetch answer"')
+    await expect(workspace.read('/runs/run_global_fetch/assistant.md')).resolves.toBe('global fetch answer')
+  })
+
+  it('reports DeepSeek HTTP failures and missing streams as harness errors', async () => {
+    const httpFailure = createDbNativeAgentHarnessHandler({
+      DB9_DATABASE_ID: 'db-test',
+      DEEPSEEK_API_KEY: 'deepseek-key',
+    }, {
+      createWorkspace: async () => new MemoryWorkspaceAdapter(undefined, { id: 'db9:test' }),
+      fetchImpl: vi.fn(async () => new Response('rate limited', { status: 429 })),
+      id: () => 'run_http_failure',
+      now: () => new Date('2026-05-27T00:00:00.000Z'),
+    })
+    const missingStream = createDbNativeAgentHarnessHandler({
+      DB9_DATABASE_ID: 'db-test',
+      DEEPSEEK_API_KEY: 'deepseek-key',
+    }, {
+      createWorkspace: async () => new MemoryWorkspaceAdapter(undefined, { id: 'db9:test' }),
+      fetchImpl: vi.fn(async () => new Response(null)),
+      id: () => 'run_missing_stream',
+      now: () => new Date('2026-05-27T00:00:00.000Z'),
+    })
+
+    const httpBody = await (await httpFailure.fetch(new Request('https://sandbank.dev/api/db-native-agent-harness/stream', {
+      method: 'POST',
+      body: JSON.stringify({ message: '@agent http fail' }),
+    }))).text()
+    const streamBody = await (await missingStream.fetch(new Request('https://sandbank.dev/api/db-native-agent-harness/stream', {
+      method: 'POST',
+      body: JSON.stringify({ message: '@agent no stream' }),
+    }))).text()
+
+    expect(httpBody).toContain('deepseek_http_error')
+    expect(streamBody).toContain('missing_deepseek_stream')
+  })
+
+  it('normalizes unknown thrown values from the model call', async () => {
+    const handler = createDbNativeAgentHarnessHandler({
+      DB9_DATABASE_ID: 'db-test',
+      DEEPSEEK_API_KEY: 'deepseek-key',
+    }, {
+      createWorkspace: async () => new MemoryWorkspaceAdapter(undefined, { id: 'db9:test' }),
+      fetchImpl: vi.fn(async () => {
+        throw 'model transport failed'
+      }),
+      id: () => 'run_unknown_throw',
+      now: () => new Date('2026-05-27T00:00:00.000Z'),
+    })
+
+    const response = await handler.fetch(new Request('https://sandbank.dev/api/db-native-agent-harness/stream', {
+      method: 'POST',
+      body: JSON.stringify({ message: '@agent unknown throw' }),
+    }))
+
+    const body = await response.text()
+
+    expect(body).toContain('DB-native harness request failed.')
+    expect(body).toContain('"code":"harness_error"')
+  })
+
+  it('fails the run when a Dynamic Worker capsule returns a non-2xx response', async () => {
+    const workspace = new MemoryWorkspaceAdapter(undefined, { id: 'db9:test' })
+    const handler = createDbNativeAgentHarnessHandler({
+      DB9_DATABASE_ID: 'db-test',
+      DEEPSEEK_API_KEY: 'deepseek-key',
+    }, {
+      createWorkspace: async () => workspace,
+      createExecutionCapsule: () => ({
+        invoke: async options => {
+          await options.onEvent?.({ type: 'log', level: 'error', message: 'capsule failed' })
+          return { status: 500, headers: {}, body: 'boom' }
+        },
+      }),
+      fetchImpl: vi.fn(),
+      id: () => 'run_capsule_failure',
+      now: () => new Date('2026-05-27T00:00:00.000Z'),
+    })
+
+    const response = await handler.fetch(new Request('https://sandbank.dev/api/db-native-agent-harness/stream', {
+      method: 'POST',
+      body: JSON.stringify({ message: '@agent run failing capsule' }),
+    }))
+
+    const body = await response.text()
+
+    expect(body).toContain('capsule failed')
+    expect(body).toContain('"name":"dynamic_worker_capsule","status":"failed"')
+    expect(body).toContain('dynamic_worker_http_error')
   })
 
   it('can be served as a Node HTTP API surface', async () => {
@@ -233,6 +437,28 @@ describe('createDbNativeAgentHarnessHandler', () => {
       body: JSON.stringify({ message: 'hello' }),
     }))
     expect(unauthorized.status).toBe(401)
+
+    const authorized = await handler.fetch(new Request('https://sandbank.dev/api/db-native-agent-harness/stream', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer harness-token' },
+      body: JSON.stringify({ message: 'hello' }),
+    }))
+    expect(authorized.status).toBe(200)
+  })
+
+  it('reports unconfigured health and not-found routes without auth', async () => {
+    const handler = createDbNativeAgentHarnessHandler()
+
+    const health = await handler.fetch(new Request('https://sandbank.dev/health'))
+    const capabilities = await handler.fetch(new Request('https://sandbank.dev/api/db-native-agent-harness/capabilities'))
+    const notFound = await handler.fetch(new Request('https://sandbank.dev/nope'))
+
+    await expect(health.json()).resolves.toMatchObject({ workspace: 'unconfigured', model: 'deepseek-v4-pro' })
+    await expect(capabilities.json()).resolves.toMatchObject({
+      api: { auth: 'none' },
+      workspace: { backend: 'unconfigured' },
+    })
+    expect(notFound.status).toBe(404)
   })
 
   it('exports a Cloudflare Worker-compatible fetch surface without Node server dependencies', async () => {
