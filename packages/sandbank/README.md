@@ -2,9 +2,9 @@
 
 > Unified sandbox SDK for AI agents — write once, run on any cloud.
 
-**[Website](https://sandbank.dev)** | **[中文文档](./README.zh-CN.md)** | **[日本語ドキュメント](./README.ja.md)**
+**[Website](https://sandbank.dev)** | **[中文文档](../../README.md)** | **[English](../../README.en.md)** | **[日本語ドキュメント](../../README.ja.md)**
 
-<img src="../../docs/assets/sandbank-robots-vacation.png" alt="Small robot agents vacationing on an ocean sandbank, each with a different developer role" width="100%" />
+<img src="../../docs/assets/sandbank-robots-vacation-pixel.png" alt="Pixel art robot agents vacationing on an ocean sandbank, each with a different developer role" width="100%" />
 
 Sandbank provides a single TypeScript interface for creating, managing, and orchestrating cloud sandboxes. Switch between providers without changing your application code.
 

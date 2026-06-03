@@ -4,9 +4,9 @@
 
 Sandbank はクラウドサンドボックスの作成・管理・オーケストレーションに統一された TypeScript インターフェースを提供します。プロバイダーを切り替えても、アプリケーションコードの変更は不要です。
 
-**[ウェブサイト](https://sandbank.dev)** | **[English](./README.md)** | **[中文文档](./README.zh-CN.md)**
+**[ウェブサイト](https://sandbank.dev)** | **[English](./README.en.md)** | **[中文文档](./README.md)**
 
-<img src="./docs/assets/sandbank-robots-vacation.png" alt="海の sandbank で休暇を過ごす小さなロボット Agent たち。それぞれが異なる開発者ロールを持つ" width="100%" />
+<img src="./docs/assets/sandbank-robots-vacation-pixel.png" alt="ピクセルアート風の海の sandbank で休暇を過ごす小さなロボット Agent たち。それぞれが異なる開発者ロールを持つ" width="100%" />
 
 ## なぜ Sandbank?
 
