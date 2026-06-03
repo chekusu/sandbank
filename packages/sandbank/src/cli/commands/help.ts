@@ -26,6 +26,7 @@ Commands:
   workspace watch [path] --replay   Replay local workspace events
   workspace checkpoint [label]      Create a local workspace checkpoint
   harness-api [--port <n>]          Start DB-native harness API
+  harness-benchmark --question <q>  Score a Sandbank harness agent run
 
 Global options:
   --api-key <key>       API key for authentication

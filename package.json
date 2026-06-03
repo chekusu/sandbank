@@ -15,7 +15,8 @@
     "clean": "pnpm -r clean",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:conformance": "vitest run --config vitest.conformance.config.ts"
+    "test:conformance": "vitest run --config vitest.conformance.config.ts",
+    "bench:harness": "pnpm --filter ./packages/sandbank bench:harness"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^4.0.18",

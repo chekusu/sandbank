@@ -44,6 +44,10 @@
       "types": "./dist/harness-node.d.ts",
       "import": "./dist/harness-node.js"
     },
+    "./harness-benchmark": {
+      "types": "./dist/harness-benchmark.d.ts",
+      "import": "./dist/harness-benchmark.js"
+    },
     "./agent-supervisor": {
       "types": "./dist/agent-supervisor.d.ts",
       "import": "./dist/agent-supervisor.js"
@@ -51,12 +55,14 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "harness-benchmark.cases.json"
   ],
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "bench:harness": "tsx src/cli/index.ts harness-benchmark --cases ./harness-benchmark.cases.json"
   },
   "dependencies": {
     "@sandbank.dev/cloud": "workspace:*",

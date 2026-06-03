@@ -1,0 +1,57 @@
+{
+  "cases": [
+    {
+      "id": "dynamic-worker-capsule-health",
+      "question": "@agent Run a Sandbank harness health check. Use the Dynamic Worker capsule if available. The final answer must include these exact markers: HARNESS_OK, WORKSPACE_OK, CAPSULE_OK.",
+      "expect": {
+        "requireDynamicWorker": true,
+        "requiredToolResults": ["dynamic_worker_capsule"],
+        "requiredEventLabels": ["checkpoint.created", "workspace.persisted"],
+        "requiredTextIncludes": ["HARNESS_OK", "WORKSPACE_OK", "CAPSULE_OK"],
+        "maxFirstEventMs": 8000,
+        "maxTotalMs": 45000,
+        "minScore": 80
+      }
+    },
+    {
+      "id": "history-continuity",
+      "history": [
+        {
+          "role": "user",
+          "content": "Session marker: SB-BENCH-HISTORY-01"
+        }
+      ],
+      "question": "@agent Read the latest chat context and summarize how Sandbank persisted this run. The final answer must include exactly: SB-BENCH-HISTORY-01 and HISTORY_OK.",
+      "expect": {
+        "requireDynamicWorker": true,
+        "requiredToolResults": ["dynamic_worker_capsule"],
+        "requiredEventLabels": ["checkpoint.created", "workspace.persisted"],
+        "requiredTextIncludes": ["SB-BENCH-HISTORY-01", "HISTORY_OK"],
+        "maxFirstEventMs": 8000,
+        "maxTotalMs": 45000,
+        "minScore": 80
+      }
+    },
+    {
+      "id": "attachment-context",
+      "question": "@agent Inspect the attached context metadata. The final answer must include exactly: ATTACHMENT_OK and benchmark-context.txt.",
+      "attachments": [
+        {
+          "id": "bench-attachment-1",
+          "name": "benchmark-context.txt",
+          "mediaType": "text/plain",
+          "size": 128
+        }
+      ],
+      "expect": {
+        "requireDynamicWorker": true,
+        "requiredToolResults": ["dynamic_worker_capsule"],
+        "requiredEventLabels": ["checkpoint.created", "workspace.persisted"],
+        "requiredTextIncludes": ["ATTACHMENT_OK", "benchmark-context.txt"],
+        "maxFirstEventMs": 8000,
+        "maxTotalMs": 45000,
+        "minScore": 80
+      }
+    }
+  ]
+}
