@@ -66,6 +66,32 @@ await session.waitForAll()
 await session.close()
 ```
 
+## Provider Image Catalogs
+
+Use `resolveProviderCreateConfig` when one logical image needs different provider-specific values, such as a Docker image for Daytona/Fly.io, an E2B template, or a BoxLite OCI image path.
+
+```typescript
+import { resolveProviderCreateConfig } from '@sandbank.dev/core'
+
+const images = {
+  'agent-node': {
+    default: 'ghcr.io/acme/agent-node:2026.06',
+    providers: {
+      e2b: 'agent-node-e2b-template',
+      boxlite: '/var/lib/boxlite/images/agent-node.oci',
+    },
+  },
+}
+
+const config = resolveProviderCreateConfig(
+  { image: 'agent-node', env: { RUN_ID: 'run-1' } },
+  provider.name,
+  images,
+)
+
+const sandbox = await provider.create(config)
+```
+
 ## License
 
 MIT

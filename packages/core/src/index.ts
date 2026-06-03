@@ -43,6 +43,17 @@ export type {
 // Provider factory
 export { createProvider } from './provider.js'
 
+// Provider image resolution
+export {
+  resolveProviderCreateConfig,
+  resolveProviderImage,
+} from './images.js'
+export type {
+  ProviderImageCatalog,
+  ProviderImageManifest,
+  ProviderImageSpec,
+} from './images.js'
+
 // Capability detection
 export {
   hasCapability,
