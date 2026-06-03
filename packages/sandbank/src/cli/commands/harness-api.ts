@@ -18,7 +18,7 @@ export async function harnessApiCommand(args: string[], _flags: CliFlags): Promi
 
   const server = await startDbNativeAgentHarnessServer(process.env as DbNativeAgentHarnessEnv, { host, port })
   console.log(`sandbank db-native harness API listening on ${server.url}`)
-  console.log(`POST ${server.url}/api/db-native-agent-harness/stream`)
+  console.log(`POST ${server.url}/api/sandbank-agent-harness/stream`)
   console.log(`GET  ${server.url}/api/db-native-agent-harness/capabilities`)
   console.log(`GET  ${server.url}/health`)
 
@@ -48,16 +48,19 @@ Starts the deployable DB-native agent harness API.
 Routes:
   GET  /health
   GET  /api/db-native-agent-harness/capabilities
+  POST /api/sandbank-agent-harness/stream
   POST /api/db-native-agent-harness/stream
 
 Required env for live db9 + DeepSeek:
   DB9_DATABASE_ID
   DB9_TOKEN
-  DEEPSEEK_API_KEY or CHATW_DEEPSEEK_API_KEY
+  DEEPSEEK_API_KEY or SANDBANK_DEEPSEEK_API_KEY
 
 Optional env:
   DEEPSEEK_MODEL=deepseek-v4-pro
   DEEPSEEK_BASE_URL=https://api.deepseek.com
+  SANDBANK_DEEPSEEK_MODEL=deepseek-v4-pro
+  SANDBANK_DEEPSEEK_BASE_URL=https://api.deepseek.com
   DB9_BASE_URL=https://db9.ai/api
   SANDBANK_HARNESS_API_KEY=<optional bearer token>`)
 }

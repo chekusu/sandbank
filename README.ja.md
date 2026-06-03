@@ -33,17 +33,22 @@ await provider.destroy(sandbox.id)
 ┌──────────────────────────────────────────────────────┐
 │  アプリケーション / AI エージェント                      │
 ├──────────────────────────────────────────────────────┤
+│  sandbank                   Agent Supervisor / Scheduler │
 │  @sandbank.dev/core         統一プロバイダーインターフェース  │
+│  @sandbank.dev/workspace    永続 Workspace と Checkpoint │
 │  @sandbank.dev/skills       スキルレジストリ・インジェクション │
 │  @sandbank.dev/agent        サンドボックス内エージェント      │
 │  @sandbank.dev/relay        マルチエージェント通信            │
 ├──────────────────────────────────────────────────────┤
 │  @sandbank.dev/daytona  @sandbank.dev/flyio  @sandbank.dev/cloudflare  │
 │  @sandbank.dev/boxlite  @sandbank.dev/e2b                 │
-│  プロバイダーアダプター                                  │
+│  プロバイダーアダプター（Compute）                         │
+├──────────────────────────────────────────────────────┤
+│  @sandbank.dev/db9       Service Adapter（Data）      │
 ├──────────────────────────────────────────────────────┤
 │  Daytona    Fly.io Machines    Cloudflare Workers     │
 │  BoxLite (セルフホスト Docker)    E2B Cloud Sandboxes  │
+│  db9.ai (PostgreSQL)                                  │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -53,11 +58,13 @@ await provider.destroy(sandbox.id)
 |-----------|------|
 | [`@sandbank.dev/core`](./packages/core) | プロバイダー抽象化、ケイパビリティシステム、エラー型 |
 | [`@sandbank.dev/skills`](./packages/skills) | スキルレジストリ、ローカルファイルシステムローダー |
+| [`@sandbank.dev/workspace`](./packages/workspace) | 永続 Workspace プロトコル、checkpoint、sandbox materialize/sync helper |
 | [`@sandbank.dev/daytona`](./packages/daytona) | Daytona クラウドサンドボックスアダプター |
 | [`@sandbank.dev/flyio`](./packages/flyio) | Fly.io Machines アダプター |
 | [`@sandbank.dev/cloudflare`](./packages/cloudflare) | Cloudflare Workers アダプター |
 | [`@sandbank.dev/boxlite`](./packages/boxlite) | BoxLite セルフホスト Docker アダプター |
 | [`@sandbank.dev/e2b`](./packages/e2b) | E2B クラウドサンドボックスアダプター |
+| [`@sandbank.dev/db9`](./packages/db9) | db9.ai serverless PostgreSQL アダプター (`ServiceProvider`) |
 | [`@sandbank.dev/relay`](./packages/relay) | マルチエージェント通信用 WebSocket リレー |
 | [`@sandbank.dev/agent`](./packages/agent) | サンドボックス内エージェント軽量クライアント |
 
@@ -79,15 +86,16 @@ await provider.destroy(sandbox.id)
 
 ケイパビリティはオプトインです。`withVolumes(provider)` や `withPortExpose(sandbox)` 等で実行時に安全に検出・アクセスできます。
 
-| ケイパビリティ | Daytona | Fly.io | Cloudflare | BoxLite | E2B | 説明 |
-|--------------|:-------:|:------:|:----------:|:-------:|:---:|------|
-| `volumes` | ✅ | ✅ | ⚠️* | ❌ | ⚠️*** | 永続ボリューム管理 |
-| `port.expose` | ✅ | ✅ | ⚠️** | ✅ | ✅ | サンドボックスポートをインターネットに公開 |
-| `exec.stream` | ❌ | ❌ | ✅ | ✅ | ❌ | stdout/stderr のリアルタイムストリーミング |
-| `snapshot` | ❌ | ❌ | ✅ | ✅ | ❌ | サンドボックス状態のスナップショットと復元 |
-| `terminal` | ✅ | ✅ | ✅ | ✅ | ✅ | インタラクティブ Web ターミナル (ttyd) |
-| `sleep` | ❌ | ❌ | ❌ | ✅ | ✅ | サンドボックスの休止と復帰 |
-| `skills` | ✅ | ✅ | ✅ | ✅ | ✅ | スキル定義をサンドボックスにロード・注入 |
+| ケイパビリティ | Daytona | Fly.io | Cloudflare | BoxLite | E2B | db9 | 説明 |
+|--------------|:-------:|:------:|:----------:|:-------:|:---:|:---:|------|
+| `volumes` | ✅ | ✅ | ⚠️* | ❌ | ⚠️*** | — | 永続ボリューム管理 |
+| `port.expose` | ✅ | ✅ | ⚠️** | ✅ | ✅ | — | サンドボックスポートをインターネットに公開 |
+| `exec.stream` | ❌ | ❌ | ✅ | ✅ | ❌ | — | stdout/stderr のリアルタイムストリーミング |
+| `snapshot` | ❌ | ❌ | ✅ | ✅ | ❌ | — | サンドボックス状態のスナップショットと復元 |
+| `terminal` | ✅ | ✅ | ✅ | ✅ | ✅ | — | インタラクティブ Web ターミナル (ttyd) |
+| `sleep` | ❌ | ❌ | ❌ | ✅ | ✅ | — | サンドボックスの休止と復帰 |
+| `skills` | ✅ | ✅ | ✅ | ✅ | ✅ | — | スキル定義をサンドボックスにロード・注入 |
+| `services` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | データサービス (PostgreSQL) をサンドボックスへバインド |
 
 \* Cloudflare の `volumes` はアダプター設定で `storage` オプションが必要です。
 
@@ -153,6 +161,123 @@ session.on('message', async (msg) => {
 await session.complete({ status: 'success', summary: '5つのAPIエンドポイントを構築' })
 ```
 
+## Provider-Neutral Workspaces
+
+Provider-native volume は provider-specific なリソースです。Fly.io volume、E2B volume、Daytona volume、Cloudflare storage binding は同じ永続ディスクではありません。プロバイダーを切り替えても状態を継続するには、正準状態を `WorkspaceAdapter` に置き、実行前に sandbox へ materialize し、実行後に変更を Workspace へ sync し、バックエンドが対応している場合は checkpoint を作成します。
+
+```typescript
+import {
+  MemoryWorkspaceAdapter,
+  materializeWorkspaceToSandbox,
+  syncWorkspaceFromSandbox,
+} from '@sandbank.dev/workspace'
+
+const workspace = new MemoryWorkspaceAdapter()
+await workspace.write('/workspace/task.md', 'ship it')
+
+const sandbox = await provider.create({ image: 'node:22' })
+await materializeWorkspaceToSandbox(workspace, sandbox, {
+  workspacePath: '/workspace',
+  sandboxPath: '/workspace',
+})
+
+await sandbox.exec('echo done > /workspace/result.txt')
+
+await syncWorkspaceFromSandbox(workspace, sandbox, {
+  workspacePath: '/workspace',
+  sandboxPath: '/workspace',
+  deleteMissing: true,
+  checkpointLabel: 'after provider run',
+})
+```
+
+Provider-native volumes はローカル cache や provider 内の永続化に使います。プロバイダーをまたぐ rollback、checkpoint、継続実行、一貫性 merge では Workspace を基準にします。
+
+## Provider Scheduler と Preflight
+
+トップレベルの `sandbank` パッケージは `selectSandboxProvider`、`preflightWorkspaceSandboxTask`、`runWorkspaceSandboxTask` をエクスポートします。scheduler は sandbox provider を compute candidate として扱い、`runtime.python`、`runtime.codex`、`codex.exec`、`codex.goal`、`workspace.snapshot`、`workspace.live` などの宣言済み capability で provider を選択します。
+
+```typescript
+import {
+  preflightWorkspaceSandboxTask,
+  runWorkspaceSandboxTask,
+} from 'sandbank'
+
+const taskConfig = {
+  workspace,
+  providers: [
+    { provider: e2bProvider, capabilities: ['runtime.python'], priority: 10 },
+    { provider: boxliteProvider, capabilities: ['runtime.python'] },
+  ],
+  task: { kind: 'python' as const, path: '/workspace/generated/task.py', image: 'python-agent' },
+  imageCatalog: {
+    'python-agent': {
+      default: 'python:3.12',
+      e2b: 'e2b-python-template',
+      boxlite: 'python:3.12-slim',
+    },
+  },
+  preflight: { runtime: true },
+}
+
+const preflight = await preflightWorkspaceSandboxTask(taskConfig)
+if (!preflight.ok) throw new Error(preflight.errors.join('; '))
+
+await runWorkspaceSandboxTask({
+  ...taskConfig,
+  consistency: { mode: 'branch-merge', conflictResolution: 'keep-both' },
+  preflight: false,
+})
+```
+
+Static preflight は実行前に Workspace と provider の capability を確認します。Runtime preflight は一時 sandbox を作成し、`python`、`codex`、`git`、`tmux`、`tar`、`gzip` などのイメージ内ツールを probe します。`codex.goal` は vas 風の `tmux` セッションを起動し、terminal attach と後続の Workspace sync のために sandbox を残します。詳細は [Provider Scheduler And Workspace Consistency](./docs/provider-scheduler-workspace.md) と [Sandbank Agent Configuration](./docs/sandbank-agent-configuration.ja.md) を参照してください。
+
+## Agent Tool Use
+
+Sandbank Tool Use は単一の model adapter より低レベルなプロトコルです。モデルループ、Dynamic Worker capsule、hosted agent は構造化された `tool.use` request を送信し、Agent Supervisor は handler や sandbox provider を呼び出す前に agent の tool/resource policy を検査します。
+
+```typescript
+import {
+  AgentSupervisor,
+  ToolUseRegistry,
+  createCloudflareResourceTool,
+  createSandboxPythonTool,
+} from 'sandbank'
+
+const registry = new ToolUseRegistry()
+  .register(createCloudflareResourceTool('read', async input => {
+    // Cloudflare D1/KV/R2 などの bindings または API に接続できます。
+    return { ok: true, resource: input.resource }
+  }))
+  .register(createSandboxPythonTool())
+
+const supervisor = new AgentSupervisor({
+  agentId: 'agent-a',
+  workspace,
+  modelId: 'deepseek-v4-pro',
+  toolUse: {
+    registry,
+    sandboxProviders: [
+      { provider: e2bProvider, capabilities: ['runtime.python'] },
+      { provider: boxliteProvider, capabilities: ['runtime.python'] },
+    ],
+    policy: {
+      allowedTools: ['cloudflare.resource.read', 'sandbox.python'],
+      resources: [
+        { kind: 'cloudflare.d1', id: 'analytics', actions: ['read'] },
+        { kind: 'sandbox.provider', id: 'e2b', actions: ['execute'] },
+        { kind: 'runtime.python', actions: ['execute'] },
+      ],
+      requireApproval: [
+        { kind: 'cloudflare.d1', action: 'write' },
+      ],
+    },
+  },
+})
+```
+
+`resources` は agent 有効化時の compute/data resource whitelist です。prompt がユーザーデータベースの変更を求めても、request は許可された resource/action と approval rule に一致する必要があります。`sandbox.python` は provider scheduler に委譲するため、Dynamic Worker が生成した Python は E2B、BoxLite、Sandbank Cloud、または `runtime.python` を宣言する provider へ派遣できます。Dynamic Worker capsule は `SANDBANK_TOOLS.list()` と `SANDBANK_TOOLS.use(request)` を通じて同じ supervisor policy を使い、権限チェックを迂回しません。
+
 ## クイックスタート
 
 ```bash
@@ -206,6 +331,41 @@ pnpm test:conformance
 pnpm typecheck
 ```
 
+### DB-native Harness API
+
+`sandbank` CLI と Worker entrypoint は、Agent Supervisor、db9 Workspace storage、DeepSeek V4 Pro に支えられた公開 Sandbank harness API を提供します：
+
+```bash
+DB9_DATABASE_ID=... DB9_TOKEN=... DEEPSEEK_API_KEY=... \
+  vas dev sandbank-harness pnpm --filter ./packages/sandbank exec tsx src/cli/index.ts harness-api --host 0.0.0.0 --port 8789
+```
+
+Routes:
+
+- `GET /health`
+- `GET /api/db-native-agent-harness/capabilities`
+- `POST /api/sandbank-agent-harness/stream`
+- `POST /api/db-native-agent-harness/stream`
+
+stream は汎用 Sandbank SSE events を送信し、run input/output を `/runs/...` に、supervisor state/audit data を `/agents/...` に永続化し、Workspace backend が対応している場合は checkpoint を作成します。デフォルトモデルは `deepseek-v4-pro` です。さらに `/agents/{agentId}/memory/memories.jsonl` に Agent memory を保存し、active な `pinned` / `insight` / `session` memory を model prompt に注入し、明示的な `remember` / `记住` request を pinned memory として書き込みます。Worker-compatible entrypoint は `sandbank/harness-worker` としてエクスポートされます。Node CLI は `vas dev` または同等の deployment path で service hosting するためのもので、localhost-only preview ではありません。モデル、Workspace、provider、image の要件は [Sandbank Agent Configuration](./docs/sandbank-agent-configuration.ja.md) にまとめています。
+
+1つの prompt で live harness を benchmark します：
+
+```bash
+pnpm --filter ./packages/sandbank exec tsx src/cli/index.ts harness-benchmark \
+  --base-url https://your-sandbank-worker.example \
+  --question "@agent run a Sandbank harness health check" \
+  --json
+```
+
+デフォルト benchmark suite を実行します：
+
+```bash
+SANDBANK_HARNESS_BASE_URL=https://your-sandbank-worker.example pnpm bench:harness -- --json
+```
+
+benchmark は各 case を `/api/db-native-agent-harness/stream` に POST し、SSE timeline を記録し、HTTP/SSE transport、harness lifecycle、Workspace persistence、Dynamic Worker capsule execution、model streaming、case expectations、latency を 100 点満点で採点します。
+
 ### インテグレーションテストの実行
 
 インテグレーションテストは実際の API を呼び出します。環境変数でゲートされています：
@@ -219,6 +379,22 @@ FLY_API_TOKEN=... FLY_APP_NAME=... pnpm test
 
 # Cloudflare
 E2E_WORKER_URL=... pnpm test
+
+# db9
+DB9_TOKEN=... pnpm --filter @sandbank.dev/db9 test:e2e
+```
+
+## テストカバレッジ
+
+| Package | Stmts | Branch | Funcs | Lines | Unit | Integration |
+|---------|:-----:|:------:|:-----:|:-----:|:----:|:-----------:|
+| `@sandbank.dev/core` | 84% | 77% | 74% | 88% | 98 | — |
+| `@sandbank.dev/db9` | 100% | 97% | 93% | 100% | 35 | 3 |
+
+ローカルで coverage を実行します：
+
+```bash
+pnpm --filter @sandbank.dev/db9 test -- --coverage
 ```
 
 ## 設計原則

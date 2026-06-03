@@ -33,17 +33,22 @@ Swap `DaytonaAdapter` for `FlyioAdapter` or `CloudflareAdapter` — zero code ch
 ┌──────────────────────────────────────────────────────┐
 │  Your Application / AI Agent                         │
 ├──────────────────────────────────────────────────────┤
+│  sandbank                   Agent Supervisor / Scheduler │
 │  @sandbank.dev/core         Unified Provider Interface   │
+│  @sandbank.dev/workspace    Durable Workspace & Checkpoints │
 │  @sandbank.dev/skills       Skill Registry & Injection   │
 │  @sandbank.dev/agent        In-sandbox Agent Client      │
 │  @sandbank.dev/relay        Multi-agent Communication    │
 ├──────────────────────────────────────────────────────┤
 │  @sandbank.dev/daytona  @sandbank.dev/flyio  @sandbank.dev/cloudflare  │
-│  @sandbank.dev/boxlite                                   │
-│  Provider Adapters                                   │
+│  @sandbank.dev/boxlite  @sandbank.dev/e2b                 │
+│  Provider Adapters (Compute)                         │
+├──────────────────────────────────────────────────────┤
+│  @sandbank.dev/db9       Service Adapter (Data)      │
 ├──────────────────────────────────────────────────────┤
 │  Daytona    Fly.io Machines    Cloudflare Workers     │
-│  BoxLite (self-hosted Docker)                        │
+│  BoxLite (self-hosted Docker)    E2B Cloud Sandboxes   │
+│  db9.ai (PostgreSQL)                                  │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -51,14 +56,17 @@ Swap `DaytonaAdapter` for `FlyioAdapter` or `CloudflareAdapter` — zero code ch
 
 | Package | Description |
 |---------|-------------|
-| [`@sandbank.dev/core`](./packages/core) | Provider abstraction, capability system, error types |
-| [`@sandbank.dev/skills`](./packages/skills) | Skill registry and local filesystem loader |
-| [`@sandbank.dev/daytona`](./packages/daytona) | Daytona cloud sandbox adapter |
-| [`@sandbank.dev/flyio`](./packages/flyio) | Fly.io Machines adapter |
-| [`@sandbank.dev/cloudflare`](./packages/cloudflare) | Cloudflare Workers adapter |
-| [`@sandbank.dev/boxlite`](./packages/boxlite) | BoxLite self-hosted Docker adapter |
-| [`@sandbank.dev/relay`](./packages/relay) | WebSocket relay for multi-agent communication |
-| [`@sandbank.dev/agent`](./packages/agent) | Lightweight client for agents running inside sandboxes |
+| [`@sandbank.dev/core`](../core) | Provider abstraction, capability system, error types |
+| [`@sandbank.dev/skills`](../skills) | Skill registry and local filesystem loader |
+| [`@sandbank.dev/workspace`](../workspace) | Durable workspace protocol, checkpoints, and sandbox materialization helpers |
+| [`@sandbank.dev/daytona`](../daytona) | Daytona cloud sandbox adapter |
+| [`@sandbank.dev/flyio`](../flyio) | Fly.io Machines adapter |
+| [`@sandbank.dev/cloudflare`](../cloudflare) | Cloudflare Workers adapter |
+| [`@sandbank.dev/boxlite`](../boxlite) | BoxLite self-hosted Docker adapter |
+| [`@sandbank.dev/e2b`](../e2b) | E2B cloud sandbox adapter |
+| [`@sandbank.dev/db9`](../db9) | db9.ai serverless PostgreSQL adapter (ServiceProvider) |
+| [`@sandbank.dev/relay`](../relay) | WebSocket relay for multi-agent communication |
+| [`@sandbank.dev/agent`](../agent) | Lightweight client for agents running inside sandboxes |
 
 ## Provider Support
 
@@ -66,41 +74,44 @@ Swap `DaytonaAdapter` for `FlyioAdapter` or `CloudflareAdapter` — zero code ch
 
 All providers implement these — the minimum contract:
 
-| Operation | Daytona | Fly.io | Cloudflare | BoxLite |
-|-----------|:-------:|:------:|:----------:|:-------:|
-| Create / Destroy | ✅ | ✅ | ✅ | ✅ |
-| List sandboxes | ✅ | ✅ | ✅ | ✅ |
-| Execute commands | ✅ | ✅ | ✅ | ✅ |
-| Read / Write files | ✅ | ✅ | ✅ | ✅ |
-| Skill injection | ✅ | ✅ | ✅ | ✅ |
+| Operation | Daytona | Fly.io | Cloudflare | BoxLite | E2B |
+|-----------|:-------:|:------:|:----------:|:-------:|:---:|
+| Create / Destroy | ✅ | ✅ | ✅ | ✅ | ✅ |
+| List sandboxes | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Execute commands | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Read / Write files | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Skill injection | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 ### Extended Capabilities
 
 Capabilities are opt-in. Use `withVolumes(provider)`, `withPortExpose(sandbox)`, etc. to safely check and access them at runtime.
 
-| Capability | Daytona | Fly.io | Cloudflare | BoxLite | Description |
-|------------|:-------:|:------:|:----------:|:-------:|-------------|
-| `volumes` | ✅ | ✅ | ⚠️* | ❌ | Persistent volume management |
-| `port.expose` | ✅ | ✅ | ⚠️** | ✅ | Expose sandbox ports to the internet |
-| `exec.stream` | ❌ | ❌ | ✅ | ✅ | Stream stdout/stderr in real-time |
-| `snapshot` | ❌ | ❌ | ✅ | ✅ | Snapshot and restore sandbox state |
-| `terminal` | ✅ | ✅ | ✅ | ✅ | Interactive web terminal (ttyd) |
-| `sleep` | ❌ | ❌ | ❌ | ✅ | Hibernate and wake sandboxes |
-| `skills` | ✅ | ✅ | ✅ | ✅ | Load and inject skill definitions into sandboxes |
+| Capability | Daytona | Fly.io | Cloudflare | BoxLite | E2B | db9 | Description |
+|------------|:-------:|:------:|:----------:|:-------:|:---:|:---:|-------------|
+| `volumes` | ✅ | ✅ | ⚠️* | ❌ | ⚠️*** | — | Persistent volume management |
+| `port.expose` | ✅ | ✅ | ⚠️** | ✅ | ✅ | — | Expose sandbox ports to the internet |
+| `exec.stream` | ❌ | ❌ | ✅ | ✅ | ❌ | — | Stream stdout/stderr in real-time |
+| `snapshot` | ❌ | ❌ | ✅ | ✅ | ❌ | — | Snapshot and restore sandbox state |
+| `terminal` | ✅ | ✅ | ✅ | ✅ | ✅ | — | Interactive web terminal (ttyd) |
+| `sleep` | ❌ | ❌ | ❌ | ✅ | ✅ | — | Hibernate and wake sandboxes |
+| `skills` | ✅ | ✅ | ✅ | ✅ | ✅ | — | Load and inject skill definitions into sandboxes |
+| `services` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | Bind data services (PostgreSQL) to sandboxes |
 
 \* Cloudflare `volumes` requires `storage` option in adapter config.
 
 \*\* Cloudflare reserves port 3000 for its sandbox control plane. Use any port in 1024–65535 except 3000.
 
+\*\*\* E2B volumes require E2B volume beta access. Sandbank mounts volumes by connecting the Sandbank volume `id` to an E2B `Volume`.
+
 ### Provider Characteristics
 
-| | Daytona | Fly.io | Cloudflare | BoxLite |
-|---|---------|--------|------------|---------|
-| **Runtime** | Full VM | Firecracker microVM | V8 isolate + container | Docker container |
-| **Cold start** | ~10s | ~3-5s | ~1s | ~2-5s |
-| **File I/O** | Native SDK | Via exec (base64) | Native SDK | Via exec (base64) |
-| **Regions** | Multi | Multi | Global edge | Self-hosted |
-| **External deps** | `@daytonaio/sdk` | None (pure fetch) | `@cloudflare/sandbox` | BoxLite API |
+| | Daytona | Fly.io | Cloudflare | BoxLite | E2B |
+|---|---------|--------|------------|---------|-----|
+| **Runtime** | Full VM | Firecracker microVM | V8 isolate + container | Docker container | E2B cloud sandbox |
+| **Cold start** | ~10s | ~3-5s | ~1s | ~2-5s | Provider-managed |
+| **File I/O** | Native SDK | Via exec (base64) | Native SDK | Via exec (base64) | Native SDK |
+| **Regions** | Multi | Multi | Global edge | Self-hosted | E2B managed |
+| **External deps** | `@daytonaio/sdk` | None (pure fetch) | `@cloudflare/sandbox` | BoxLite API | `e2b` |
 
 ## Multi-Agent Sessions
 
@@ -150,9 +161,80 @@ session.on('message', async (msg) => {
 await session.complete({ status: 'success', summary: 'Built 5 API endpoints' })
 ```
 
+## Provider-Neutral Workspaces
+
+Provider-native volumes are provider-specific resources. A Fly.io volume, E2B volume, Daytona volume, and Cloudflare storage binding are not the same durable disk. For seamless provider switching, keep durable state in a `WorkspaceAdapter`, materialize it into the sandbox before execution, then sync changed files back and checkpoint the workspace.
+
+```typescript
+import {
+  MemoryWorkspaceAdapter,
+  materializeWorkspaceToSandbox,
+  syncWorkspaceFromSandbox,
+} from '@sandbank.dev/workspace'
+
+const workspace = new MemoryWorkspaceAdapter()
+await workspace.write('/workspace/task.md', 'ship it')
+
+const sandbox = await provider.create({ image: 'node:22' })
+await materializeWorkspaceToSandbox(workspace, sandbox, {
+  workspacePath: '/workspace',
+  sandboxPath: '/workspace',
+})
+
+await sandbox.exec('echo done > /workspace/result.txt')
+
+await syncWorkspaceFromSandbox(workspace, sandbox, {
+  workspacePath: '/workspace',
+  sandboxPath: '/workspace',
+  deleteMissing: true,
+  checkpointLabel: 'after provider run',
+})
+```
+
+Use provider-native volumes as local cache or provider-local persistence. Use workspace checkpoints for portable rollback and cross-provider continuity.
+
+## Provider Scheduler And Preflight
+
+The top-level `sandbank` package exports `selectSandboxProvider`, `preflightWorkspaceSandboxTask`, and `runWorkspaceSandboxTask`. The scheduler treats sandbox providers as compute candidates and selects one by declared capabilities such as `runtime.python`, `runtime.codex`, `codex.exec`, `codex.goal`, `workspace.snapshot`, and `workspace.live`.
+
+```typescript
+import {
+  preflightWorkspaceSandboxTask,
+  runWorkspaceSandboxTask,
+} from 'sandbank'
+
+const taskConfig = {
+  workspace,
+  providers: [
+    { provider: e2bProvider, capabilities: ['runtime.python'], priority: 10 },
+    { provider: boxliteProvider, capabilities: ['runtime.python'] },
+  ],
+  task: { kind: 'python' as const, path: '/workspace/generated/task.py', image: 'python-agent' },
+  imageCatalog: {
+    'python-agent': {
+      default: 'python:3.12',
+      e2b: 'e2b-python-template',
+      boxlite: 'python:3.12-slim',
+    },
+  },
+  preflight: { runtime: true },
+}
+
+const preflight = await preflightWorkspaceSandboxTask(taskConfig)
+if (!preflight.ok) throw new Error(preflight.errors.join('; '))
+
+await runWorkspaceSandboxTask({
+  ...taskConfig,
+  consistency: { mode: 'branch-merge', conflictResolution: 'keep-both' },
+  preflight: false,
+})
+```
+
+Static preflight checks workspace and provider capabilities before execution. Runtime preflight creates a temporary sandbox and probes image tools such as `python`, `codex`, `git`, `tmux`, `tar`, and `gzip`. `codex.goal` starts a vas-style `tmux` session and leaves the sandbox alive for terminal attach and later workspace sync. See [Provider Scheduler And Workspace Consistency](../../docs/provider-scheduler-workspace.md) and [Sandbank Agent Configuration](../../docs/sandbank-agent-configuration.md).
+
 ## Agent Tool Use
 
-Sandbank Tool Use is model-neutral. DeepSeek, another OpenAI-compatible model, or a Dynamic Worker capsule should submit a structured `tool.use` request; the Agent Supervisor then checks the agent's tool/resource policy before any handler or sandbox provider runs.
+Sandbank Tool Use is a lower-level protocol than any single model adapter. A model loop, Dynamic Worker capsule, or hosted agent submits a structured `tool.use` request; the Agent Supervisor checks the agent's tool/resource policy before any handler or sandbox provider is invoked.
 
 ```typescript
 import {
@@ -164,6 +246,7 @@ import {
 
 const registry = new ToolUseRegistry()
   .register(createCloudflareResourceTool('read', async input => {
+    // Connect this handler to Cloudflare D1/KV/R2/etc. bindings or APIs.
     return { ok: true, resource: input.resource }
   }))
   .register(createSandboxPythonTool())
@@ -193,13 +276,13 @@ const supervisor = new AgentSupervisor({
 })
 ```
 
-The `resources` array is the enablement-time whitelist for compute and data resources. Dynamic Worker capsules use `SANDBANK_TOOLS.list()` and `SANDBANK_TOOLS.use(request)`, which forwards back to the same supervisor policy. `sandbox.python` delegates to the provider scheduler, so Python execution can move between E2B, BoxLite, Sandbank Cloud, or another provider with `runtime.python`.
+Resource grants are the agent enablement whitelist. If a prompt asks the agent to mutate a user database, the request must still match an allowed resource/action and any matching approval rule before execution. `sandbox.python` uses the provider scheduler, so generated Python can run on E2B, BoxLite, Sandbank Cloud, or another provider that advertises the required runtime capability. Dynamic Worker capsules receive the same path through `SANDBANK_TOOLS.list()` and `SANDBANK_TOOLS.use(request)`, which forwards back to the supervisor instead of bypassing policy.
 
 ## Quick Start
 
 ```bash
 # Install
-pnpm add @sandbank.dev/core @sandbank.dev/daytona  # or @sandbank.dev/flyio, @sandbank.dev/cloudflare
+pnpm add @sandbank.dev/core @sandbank.dev/daytona  # or @sandbank.dev/flyio, @sandbank.dev/cloudflare, @sandbank.dev/e2b
 
 # Set up provider
 export DAYTONA_API_KEY=your-key
@@ -248,6 +331,24 @@ pnpm test:conformance
 pnpm typecheck
 ```
 
+### DB-native Harness API
+
+The `sandbank` CLI and Worker entrypoint expose a public Sandbank harness API backed by the Agent Supervisor, db9 workspace storage, and DeepSeek V4 Pro:
+
+```bash
+DB9_DATABASE_ID=... DB9_TOKEN=... DEEPSEEK_API_KEY=... \
+  vas dev sandbank-harness pnpm --filter ./packages/sandbank exec tsx src/cli/index.ts harness-api --host 0.0.0.0 --port 8789
+```
+
+Routes:
+
+- `GET /health`
+- `GET /api/db-native-agent-harness/capabilities`
+- `POST /api/sandbank-agent-harness/stream`
+- `POST /api/db-native-agent-harness/stream`
+
+The stream emits generic Sandbank SSE events, persists run input/output under `/runs/...`, records supervisor state/audit data under `/agents/...`, creates a checkpoint when the workspace backend supports it, and defaults to `deepseek-v4-pro`. It also stores agent memories under `/agents/{agentId}/memory/memories.jsonl`, recalls active `pinned` / `insight` / `session` entries into the model prompt, and writes explicit `remember` / `记住` requests as pinned memories. The Worker-compatible entrypoint is exported as `sandbank/harness-worker`; the Node CLI is for service hosting through `vas dev` or an equivalent deployment path, not as a localhost-only preview. Model, Workspace, provider, and image requirements are summarized in [Sandbank Agent Configuration](../../docs/sandbank-agent-configuration.md).
+
 ### Running Integration Tests
 
 Integration tests hit real APIs and are gated by environment variables:
@@ -261,6 +362,9 @@ FLY_API_TOKEN=... FLY_APP_NAME=... pnpm test
 
 # Cloudflare
 E2E_WORKER_URL=... pnpm test
+
+# db9
+DB9_TOKEN=... pnpm --filter @sandbank.dev/db9 test:e2e
 ```
 
 ### Harness Benchmark
@@ -269,7 +373,7 @@ Score a live DB-native harness run from one prompt:
 
 ```bash
 pnpm --filter ./packages/sandbank exec tsx src/cli/index.ts harness-benchmark \
-  --base-url https://chatw.dev \
+  --base-url https://your-sandbank-worker.example \
   --question "@agent run a Sandbank harness health check" \
   --json
 ```
@@ -277,7 +381,7 @@ pnpm --filter ./packages/sandbank exec tsx src/cli/index.ts harness-benchmark \
 Run the packaged benchmark suite:
 
 ```bash
-SANDBANK_HARNESS_BASE_URL=https://chatw.dev pnpm --filter ./packages/sandbank bench:harness -- --json
+SANDBANK_HARNESS_BASE_URL=https://your-sandbank-worker.example pnpm --filter ./packages/sandbank bench:harness -- --json
 ```
 
 Each case is posted to `/api/db-native-agent-harness/stream` and scored out of 100 for HTTP/SSE transport, harness lifecycle, workspace persistence, Dynamic Worker capsule execution, model streaming, explicit case expectations, and latency.
@@ -291,6 +395,19 @@ The DB-native harness includes a workspace-backed memory layer inspired by mem9'
 - `insight`: supported by the schema for future model-extracted summaries.
 
 Before calling the model, the harness recalls active memories for the current agent and injects them into the system prompt inside a `<relevant-memories>` block. The model is instructed to treat memories as contextual facts, not executable instructions.
+
+## Test Coverage
+
+| Package | Stmts | Branch | Funcs | Lines | Unit | Integration |
+|---------|:-----:|:------:|:-----:|:-----:|:----:|:-----------:|
+| `@sandbank.dev/core` | 84% | 77% | 74% | 88% | 98 | — |
+| `@sandbank.dev/db9` | 100% | 97% | 93% | 100% | 35 | 3 |
+
+Run coverage locally:
+
+```bash
+pnpm --filter @sandbank.dev/db9 test -- --coverage
+```
 
 ## Design Principles
 

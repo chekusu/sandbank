@@ -11,7 +11,7 @@ afterEach(() => {
 })
 
 describe('createDbNativeAgentHarnessHandler', () => {
-  it('streams chatw events while persisting a db-native run in the workspace', async () => {
+  it('streams harness events while persisting a db-native run through the public worker API', async () => {
     const workspace = new MemoryWorkspaceAdapter(undefined, { id: 'db9:test' })
     const fetchImpl = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => {
       const encoder = new TextEncoder()
@@ -36,7 +36,7 @@ describe('createDbNativeAgentHarnessHandler', () => {
       id: () => 'run_1',
     })
 
-    const response = await handler.fetch(new Request('https://sandbank.dev/api/db-native-agent-harness/stream', {
+    const response = await handler.fetch(new Request('https://sandbank.dev/api/sandbank-agent-harness/stream', {
       method: 'POST',
       body: JSON.stringify({
         message: '@codex draft a db-native harness run',
@@ -270,7 +270,7 @@ describe('createDbNativeAgentHarnessHandler', () => {
     expect(body).toContain('"text":"model answer"')
   })
 
-  it('reports missing db9 configuration as a chatw error event', async () => {
+  it('reports missing db9 configuration as a harness error event', async () => {
     const handler = createDbNativeAgentHarnessHandler({
       DEEPSEEK_API_KEY: 'deepseek-key',
     }, {
@@ -344,7 +344,7 @@ describe('createDbNativeAgentHarnessHandler', () => {
     const handler = createDbNativeAgentHarnessHandler({
       DB9_DATABASE_ID: 'db-test',
       OPENAI_API_KEY: 'openai-key',
-      CHATW_DEEPSEEK_USE_OPENAI_ENV: '1',
+      SANDBANK_DEEPSEEK_USE_OPENAI_ENV: '1',
       OPENAI_BASE_URL: 'https://openai-compatible.example',
       DEEPSEEK_MODEL: 'deepseek-custom',
     }, {
@@ -354,7 +354,7 @@ describe('createDbNativeAgentHarnessHandler', () => {
       id: () => 'run_empty_stream',
     })
 
-    const response = await handler.fetch(new Request('https://sandbank.dev/api/chatw/stream', {
+    const response = await handler.fetch(new Request('https://sandbank.dev/api/sandbank-agent-harness/stream', {
       method: 'POST',
       body: JSON.stringify({
         message: '@agent inspect uploaded context',
@@ -409,9 +409,9 @@ describe('createDbNativeAgentHarnessHandler', () => {
     vi.stubGlobal('fetch', globalFetch)
     const handler = createDbNativeAgentHarnessHandler({
       DB9_DATABASE_ID: 'db-test',
-      CHATW_DEEPSEEK_API_KEY: 'chatw-key',
-      CHATW_DEEPSEEK_BASE_URL: 'https://chatw-deepseek.example',
-      CHATW_DEEPSEEK_MODEL: 'chatw-deepseek',
+      SANDBANK_DEEPSEEK_API_KEY: 'sandbank-key',
+      SANDBANK_DEEPSEEK_BASE_URL: 'https://sandbank-deepseek.example',
+      SANDBANK_DEEPSEEK_MODEL: 'sandbank-deepseek',
     }, {
       createWorkspace: async () => workspace,
       id: () => 'run_global_fetch',
@@ -433,8 +433,8 @@ describe('createDbNativeAgentHarnessHandler', () => {
     const body = await response.text()
     const requestBody = JSON.parse(String(globalFetch.mock.calls[0]?.[1]?.body)) as { model: string; messages: Array<{ role: string; content: string }> }
 
-    expect(String(globalFetch.mock.calls[0]?.[0])).toBe('https://chatw-deepseek.example/chat/completions')
-    expect(requestBody.model).toBe('chatw-deepseek')
+    expect(String(globalFetch.mock.calls[0]?.[0])).toBe('https://sandbank-deepseek.example/chat/completions')
+    expect(requestBody.model).toBe('sandbank-deepseek')
     expect(requestBody.messages.map(message => message.role)).toEqual(['system', 'assistant', 'user', 'user'])
     expect(requestBody.messages.at(-1)?.content).toBe('Use the DB-native harness.')
     expect(body).toContain('"text":"global fetch answer"')
@@ -560,7 +560,8 @@ describe('createDbNativeAgentHarnessHandler', () => {
     })
 
     const capabilities = await handler.fetch(new Request('https://sandbank.dev/api/db-native-agent-harness/capabilities'))
-    await expect(capabilities.json()).resolves.toMatchObject({
+    const capabilitiesBody = await capabilities.json() as { api: { routes: string[] } }
+    expect(capabilitiesBody).toMatchObject({
       api: { auth: 'bearer', sse: true },
       supervisor: { runState: true, policyChecks: true },
       memory: { enabled: true, types: ['pinned', 'insight', 'session'] },
@@ -571,6 +572,11 @@ describe('createDbNativeAgentHarnessHandler', () => {
       },
       deployment: { nodeCli: 'sandbank harness-api' },
     })
+    expect(capabilitiesBody.api.routes).toContain('POST /api/sandbank-agent-harness/stream')
+    expect(capabilitiesBody.api.routes.filter(route => route.startsWith('POST '))).toEqual([
+      'POST /api/sandbank-agent-harness/stream',
+      'POST /api/db-native-agent-harness/stream',
+    ])
 
     const unauthorized = await handler.fetch(new Request('https://sandbank.dev/api/db-native-agent-harness/stream', {
       method: 'POST',

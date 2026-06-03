@@ -7,7 +7,7 @@ import {
 } from './harness-benchmark.js'
 
 describe('parseHarnessSse', () => {
-  it('parses chatw SSE events across chunk boundaries and skips malformed frames', () => {
+  it('parses harness SSE events across chunk boundaries and skips malformed frames', () => {
     const parsed = parseHarnessSse([
       'data: {"type":"harness.started","harnessId":"h1"}\n\n',
       'data: {"type":"text.delta","messageId":"m1","text":"hel',

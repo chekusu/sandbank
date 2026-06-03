@@ -102,7 +102,7 @@ export class AgentMemoryStore {
       metadata: input.metadata,
       runId: input.runId,
       sessionId: input.sessionId ?? input.runId,
-      source: 'chatw-run',
+      source: 'harness-run',
     })
   }
 

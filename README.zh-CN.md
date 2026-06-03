@@ -33,17 +33,22 @@ await provider.destroy(sandbox.id)
 ┌──────────────────────────────────────────────────────┐
 │  你的应用 / AI Agent                                  │
 ├──────────────────────────────────────────────────────┤
+│  sandbank                   Agent Supervisor / Scheduler │
 │  @sandbank.dev/core         统一 Provider 接口            │
+│  @sandbank.dev/workspace    持久 Workspace 与 Checkpoint  │
 │  @sandbank.dev/skills       Skill 注册表与注入            │
 │  @sandbank.dev/agent        沙箱内 Agent 客户端           │
 │  @sandbank.dev/relay        多 Agent 通信中枢             │
 ├──────────────────────────────────────────────────────┤
 │  @sandbank.dev/daytona  @sandbank.dev/flyio  @sandbank.dev/cloudflare  │
 │  @sandbank.dev/boxlite  @sandbank.dev/e2b                 │
-│  Provider 适配器                                      │
+│  Provider 适配器（计算）                               │
+├──────────────────────────────────────────────────────┤
+│  @sandbank.dev/db9       Service Adapter（数据）       │
 ├──────────────────────────────────────────────────────┤
 │  Daytona    Fly.io Machines    Cloudflare Workers     │
 │  BoxLite (自托管 Docker)    E2B Cloud Sandboxes        │
+│  db9.ai (PostgreSQL)                                  │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -53,11 +58,13 @@ await provider.destroy(sandbox.id)
 |------|------|
 | [`@sandbank.dev/core`](./packages/core) | Provider 抽象、能力系统、错误类型 |
 | [`@sandbank.dev/skills`](./packages/skills) | Skill 注册表、本地文件系统加载器 |
+| [`@sandbank.dev/workspace`](./packages/workspace) | 持久 Workspace 协议、checkpoint、沙箱 materialize/sync helper |
 | [`@sandbank.dev/daytona`](./packages/daytona) | Daytona 云沙箱适配器 |
 | [`@sandbank.dev/flyio`](./packages/flyio) | Fly.io Machines 适配器 |
 | [`@sandbank.dev/cloudflare`](./packages/cloudflare) | Cloudflare Workers 适配器 |
 | [`@sandbank.dev/boxlite`](./packages/boxlite) | BoxLite 自托管 Docker 适配器 |
 | [`@sandbank.dev/e2b`](./packages/e2b) | E2B 云沙箱适配器 |
+| [`@sandbank.dev/db9`](./packages/db9) | db9.ai serverless PostgreSQL 适配器 (`ServiceProvider`) |
 | [`@sandbank.dev/relay`](./packages/relay) | WebSocket 中继，用于多 Agent 通信 |
 | [`@sandbank.dev/agent`](./packages/agent) | 沙箱内 Agent 轻量客户端 |
 
@@ -79,15 +86,16 @@ await provider.destroy(sandbox.id)
 
 能力是可选的。通过 `withVolumes(provider)`、`withPortExpose(sandbox)` 等函数在运行时安全检测并访问。
 
-| 能力 | Daytona | Fly.io | Cloudflare | BoxLite | E2B | 说明 |
-|------|:-------:|:------:|:----------:|:-------:|:---:|------|
-| `volumes` | ✅ | ✅ | ⚠️* | ❌ | ⚠️*** | 持久卷管理 |
-| `port.expose` | ✅ | ✅ | ⚠️** | ✅ | ✅ | 将沙箱端口暴露到公网 |
-| `exec.stream` | ❌ | ❌ | ✅ | ✅ | ❌ | 实时流式输出 stdout/stderr |
-| `snapshot` | ❌ | ❌ | ✅ | ✅ | ❌ | 沙箱状态快照与恢复 |
-| `terminal` | ✅ | ✅ | ✅ | ✅ | ✅ | 交互式 Web 终端 (ttyd) |
-| `sleep` | ❌ | ❌ | ❌ | ✅ | ✅ | 休眠与唤醒 |
-| `skills` | ✅ | ✅ | ✅ | ✅ | ✅ | 加载并注入 Skill 定义到沙箱 |
+| 能力 | Daytona | Fly.io | Cloudflare | BoxLite | E2B | db9 | 说明 |
+|------|:-------:|:------:|:----------:|:-------:|:---:|:---:|------|
+| `volumes` | ✅ | ✅ | ⚠️* | ❌ | ⚠️*** | — | 持久卷管理 |
+| `port.expose` | ✅ | ✅ | ⚠️** | ✅ | ✅ | — | 将沙箱端口暴露到公网 |
+| `exec.stream` | ❌ | ❌ | ✅ | ✅ | ❌ | — | 实时流式输出 stdout/stderr |
+| `snapshot` | ❌ | ❌ | ✅ | ✅ | ❌ | — | 沙箱状态快照与恢复 |
+| `terminal` | ✅ | ✅ | ✅ | ✅ | ✅ | — | 交互式 Web 终端 (ttyd) |
+| `sleep` | ❌ | ❌ | ❌ | ✅ | ✅ | — | 休眠与唤醒 |
+| `skills` | ✅ | ✅ | ✅ | ✅ | ✅ | — | 加载并注入 Skill 定义到沙箱 |
+| `services` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | 将数据服务 (PostgreSQL) 绑定到沙箱 |
 
 \* Cloudflare 的 `volumes` 需要在适配器配置中启用 `storage` 选项。
 
@@ -153,6 +161,123 @@ session.on('message', async (msg) => {
 await session.complete({ status: 'success', summary: '完成了 5 个 API 端点' })
 ```
 
+## Provider-Neutral Workspaces（跨 Provider Workspace）
+
+Provider 原生 volume 都是 provider-specific 资源。Fly.io volume、E2B volume、Daytona volume、Cloudflare storage binding 并不是同一块持久磁盘。要在不同 sandbox provider 之间切换并保持状态连续，需要把权威状态放在 `WorkspaceAdapter` 里：运行前 materialize 到沙箱，运行后把变更 sync 回 Workspace，并在后端支持时创建 checkpoint。
+
+```typescript
+import {
+  MemoryWorkspaceAdapter,
+  materializeWorkspaceToSandbox,
+  syncWorkspaceFromSandbox,
+} from '@sandbank.dev/workspace'
+
+const workspace = new MemoryWorkspaceAdapter()
+await workspace.write('/workspace/task.md', 'ship it')
+
+const sandbox = await provider.create({ image: 'node:22' })
+await materializeWorkspaceToSandbox(workspace, sandbox, {
+  workspacePath: '/workspace',
+  sandboxPath: '/workspace',
+})
+
+await sandbox.exec('echo done > /workspace/result.txt')
+
+await syncWorkspaceFromSandbox(workspace, sandbox, {
+  workspacePath: '/workspace',
+  sandboxPath: '/workspace',
+  deleteMissing: true,
+  checkpointLabel: 'after provider run',
+})
+```
+
+Provider-native volumes 适合作为本地 cache 或 provider 内部持久化；跨 provider rollback、checkpoint、连续运行和一致性合并应以 Workspace 为准。
+
+## Provider Scheduler 与 Preflight
+
+顶层 `sandbank` 包导出 `selectSandboxProvider`、`preflightWorkspaceSandboxTask` 和 `runWorkspaceSandboxTask`。调度器把 sandbox provider 当作计算候选，根据 `runtime.python`、`runtime.codex`、`codex.exec`、`codex.goal`、`workspace.snapshot`、`workspace.live` 等声明能力选择 provider。
+
+```typescript
+import {
+  preflightWorkspaceSandboxTask,
+  runWorkspaceSandboxTask,
+} from 'sandbank'
+
+const taskConfig = {
+  workspace,
+  providers: [
+    { provider: e2bProvider, capabilities: ['runtime.python'], priority: 10 },
+    { provider: boxliteProvider, capabilities: ['runtime.python'] },
+  ],
+  task: { kind: 'python' as const, path: '/workspace/generated/task.py', image: 'python-agent' },
+  imageCatalog: {
+    'python-agent': {
+      default: 'python:3.12',
+      e2b: 'e2b-python-template',
+      boxlite: 'python:3.12-slim',
+    },
+  },
+  preflight: { runtime: true },
+}
+
+const preflight = await preflightWorkspaceSandboxTask(taskConfig)
+if (!preflight.ok) throw new Error(preflight.errors.join('; '))
+
+await runWorkspaceSandboxTask({
+  ...taskConfig,
+  consistency: { mode: 'branch-merge', conflictResolution: 'keep-both' },
+  preflight: false,
+})
+```
+
+Static preflight 会在执行前检查 Workspace 和 provider 能力；runtime preflight 会创建临时 sandbox 探测镜像工具，例如 `python`、`codex`、`git`、`tmux`、`tar`、`gzip`。`codex.goal` 会启动 vas 风格的 `tmux` 会话并保留沙箱，方便终端 attach 和后续 Workspace sync。更多细节见 [Provider Scheduler And Workspace Consistency](./docs/provider-scheduler-workspace.md) 和 [Sandbank Agent Configuration](./docs/sandbank-agent-configuration.zh-CN.md)。
+
+## Agent Tool Use
+
+Sandbank Tool Use 是比单一模型 adapter 更底层的协议。模型循环、Dynamic Worker capsule 或托管 Agent 都提交结构化的 `tool.use` 请求；Agent Supervisor 会先检查该 Agent 的 tool/resource policy，然后才调用 handler 或 sandbox provider。
+
+```typescript
+import {
+  AgentSupervisor,
+  ToolUseRegistry,
+  createCloudflareResourceTool,
+  createSandboxPythonTool,
+} from 'sandbank'
+
+const registry = new ToolUseRegistry()
+  .register(createCloudflareResourceTool('read', async input => {
+    // 这里可以连接 Cloudflare D1/KV/R2 等 bindings 或 API。
+    return { ok: true, resource: input.resource }
+  }))
+  .register(createSandboxPythonTool())
+
+const supervisor = new AgentSupervisor({
+  agentId: 'agent-a',
+  workspace,
+  modelId: 'deepseek-v4-pro',
+  toolUse: {
+    registry,
+    sandboxProviders: [
+      { provider: e2bProvider, capabilities: ['runtime.python'] },
+      { provider: boxliteProvider, capabilities: ['runtime.python'] },
+    ],
+    policy: {
+      allowedTools: ['cloudflare.resource.read', 'sandbox.python'],
+      resources: [
+        { kind: 'cloudflare.d1', id: 'analytics', actions: ['read'] },
+        { kind: 'sandbox.provider', id: 'e2b', actions: ['execute'] },
+        { kind: 'runtime.python', actions: ['execute'] },
+      ],
+      requireApproval: [
+        { kind: 'cloudflare.d1', action: 'write' },
+      ],
+    },
+  },
+})
+```
+
+`resources` 是 Agent 启用时的计算和数据资源白名单。即使 prompt 要求 Agent 修改用户数据库，请求也必须匹配允许的 resource/action，并满足对应的 approval rule。`sandbox.python` 会走 provider scheduler，因此 Dynamic Worker 生成的 Python 可以派发到 E2B、BoxLite、Sandbank Cloud 或任何声明 `runtime.python` 的 provider。Dynamic Worker capsule 通过 `SANDBANK_TOOLS.list()` 和 `SANDBANK_TOOLS.use(request)` 走同一条 supervisor policy，不会绕过权限控制。
+
 ## 快速开始
 
 ```bash
@@ -206,6 +331,41 @@ pnpm test:conformance
 pnpm typecheck
 ```
 
+### DB-native Harness API
+
+`sandbank` CLI 和 Worker entrypoint 暴露了公开的 Sandbank harness API，底层由 Agent Supervisor、db9 Workspace storage 和 DeepSeek V4 Pro 驱动：
+
+```bash
+DB9_DATABASE_ID=... DB9_TOKEN=... DEEPSEEK_API_KEY=... \
+  vas dev sandbank-harness pnpm --filter ./packages/sandbank exec tsx src/cli/index.ts harness-api --host 0.0.0.0 --port 8789
+```
+
+Routes:
+
+- `GET /health`
+- `GET /api/db-native-agent-harness/capabilities`
+- `POST /api/sandbank-agent-harness/stream`
+- `POST /api/db-native-agent-harness/stream`
+
+stream 会发送通用 Sandbank SSE events，把 run input/output 持久化到 `/runs/...`，把 supervisor state/audit data 写入 `/agents/...`，并在 Workspace 后端支持时创建 checkpoint。默认模型是 `deepseek-v4-pro`。它还会把 Agent memory 存在 `/agents/{agentId}/memory/memories.jsonl`，将 active `pinned` / `insight` / `session` 记忆注入模型 prompt，并把显式的 `remember` / `记住` 请求写成 pinned memory。Worker-compatible entrypoint 导出为 `sandbank/harness-worker`；Node CLI 用于通过 `vas dev` 或等价部署路径托管服务，不是 localhost-only preview。模型、Workspace、provider 和镜像要求见 [Sandbank Agent Configuration](./docs/sandbank-agent-configuration.zh-CN.md)。
+
+用一个 prompt 对线上 harness 做 benchmark：
+
+```bash
+pnpm --filter ./packages/sandbank exec tsx src/cli/index.ts harness-benchmark \
+  --base-url https://your-sandbank-worker.example \
+  --question "@agent run a Sandbank harness health check" \
+  --json
+```
+
+运行默认 benchmark suite：
+
+```bash
+SANDBANK_HARNESS_BASE_URL=https://your-sandbank-worker.example pnpm bench:harness -- --json
+```
+
+benchmark 会把每个 case POST 到 `/api/db-native-agent-harness/stream`，记录 SSE timeline，并按 HTTP/SSE transport、harness lifecycle、Workspace persistence、Dynamic Worker capsule execution、model streaming、case expectations 和 latency 计分，满分 100。
+
 ### 运行集成测试
 
 集成测试会调用真实 API，通过环境变量控制开关：
@@ -219,6 +379,22 @@ FLY_API_TOKEN=... FLY_APP_NAME=... pnpm test
 
 # Cloudflare
 E2E_WORKER_URL=... pnpm test
+
+# db9
+DB9_TOKEN=... pnpm --filter @sandbank.dev/db9 test:e2e
+```
+
+## 测试覆盖率
+
+| Package | Stmts | Branch | Funcs | Lines | Unit | Integration |
+|---------|:-----:|:------:|:-----:|:-----:|:----:|:-----------:|
+| `@sandbank.dev/core` | 84% | 77% | 74% | 88% | 98 | — |
+| `@sandbank.dev/db9` | 100% | 97% | 93% | 100% | 35 | 3 |
+
+本地运行 coverage：
+
+```bash
+pnpm --filter @sandbank.dev/db9 test -- --coverage
 ```
 
 ## 设计原则

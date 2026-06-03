@@ -11,7 +11,7 @@
 
 | 領域 | 用途 | 必須設定 |
 |------|------|----------|
-| モデル | DB-native harness のモデル呼び出し | `CHATW_DEEPSEEK_API_KEY` または `DEEPSEEK_API_KEY` |
+| モデル | DB-native harness のモデル呼び出し | `SANDBANK_DEEPSEEK_API_KEY` または `DEEPSEEK_API_KEY` |
 | Workspace | Agent 状態、run ファイル、checkpoint、memory、artifact の永続化 | `DB9_DATABASE_ID` と `DB9_TOKEN`。ただし `createWorkspace` を注入する場合は不要 |
 | Provider | Dynamic Worker 以外の sandbox 計算タスク | タスクに合う capability を持つ `SandboxProviderCandidate` が少なくとも一つ |
 | イメージ/runtime | provider に派遣するタスク | 必要なツールを含む論理イメージマッピング、または直接指定するイメージ |
@@ -24,12 +24,12 @@ harness は現在 DeepSeek-compatible chat completions API を使用します。
 
 | 設定 | 必須 | デフォルト | 説明 |
 |------|:----:|------------|------|
-| `CHATW_DEEPSEEK_API_KEY` | どちらか必須 | — | 優先される ChatW 専用モデル key |
+| `SANDBANK_DEEPSEEK_API_KEY` | どちらか必須 | — | 優先される Sandbank harness モデル key |
 | `DEEPSEEK_API_KEY` | どちらか必須 | — | fallback モデル key |
-| `OPENAI_API_KEY` | 条件付き | — | `CHATW_DEEPSEEK_USE_OPENAI_ENV=1`、または `OPENAI_BASE_URL` が DeepSeek/OpenRouter/gateway endpoint を指す場合のみ使用 |
-| `CHATW_DEEPSEEK_MODEL` | いいえ | `deepseek-v4-pro` | 優先モデル override |
+| `OPENAI_API_KEY` | 条件付き | — | `SANDBANK_DEEPSEEK_USE_OPENAI_ENV=1`、または `OPENAI_BASE_URL` が DeepSeek/OpenRouter/gateway endpoint を指す場合のみ使用 |
+| `SANDBANK_DEEPSEEK_MODEL` | いいえ | `deepseek-v4-pro` | 優先モデル override |
 | `DEEPSEEK_MODEL` | いいえ | `deepseek-v4-pro` | fallback モデル override |
-| `CHATW_DEEPSEEK_BASE_URL` | いいえ | `https://api.deepseek.com` | 優先 compatible API base URL |
+| `SANDBANK_DEEPSEEK_BASE_URL` | いいえ | `https://api.deepseek.com` | 優先 compatible API base URL |
 | `DEEPSEEK_BASE_URL` | いいえ | `https://api.deepseek.com` | fallback compatible API base URL |
 | `OPENAI_BASE_URL` | 条件付き任意 | — | `OPENAI_API_KEY` と同じ条件で使用 |
 
@@ -62,7 +62,6 @@ DEEPSEEK_MODEL=deepseek-v4-pro \
 | `SANDBANK_HARNESS_HOST` | いいえ | `0.0.0.0` | CLI `--host` が優先 |
 | `SANDBANK_HARNESS_PORT` | いいえ | `8789` | CLI `--port` が優先。`PORT` も使用可能 |
 | `SANDBANK_HARNESS_API_KEY` | いいえ | — | bearer-token 認証を有効化 |
-| `CHATW_HARNESS_API_KEY` | いいえ | — | 代替の認証環境変数名 |
 
 ## Dynamic Worker 設定
 

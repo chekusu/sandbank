@@ -33,7 +33,9 @@ Swap `DaytonaAdapter` for `FlyioAdapter` or `CloudflareAdapter` — zero code ch
 ┌──────────────────────────────────────────────────────┐
 │  Your Application / AI Agent                         │
 ├──────────────────────────────────────────────────────┤
+│  sandbank                   Agent Supervisor / Scheduler │
 │  @sandbank.dev/core         Unified Provider Interface   │
+│  @sandbank.dev/workspace    Durable Workspace & Checkpoints │
 │  @sandbank.dev/skills       Skill Registry & Injection   │
 │  @sandbank.dev/agent        In-sandbox Agent Client      │
 │  @sandbank.dev/relay        Multi-agent Communication    │
@@ -191,6 +193,46 @@ await syncWorkspaceFromSandbox(workspace, sandbox, {
 
 Use provider-native volumes as local cache or provider-local persistence. Use workspace checkpoints for portable rollback and cross-provider continuity.
 
+## Provider Scheduler And Preflight
+
+The top-level `sandbank` package exports `selectSandboxProvider`, `preflightWorkspaceSandboxTask`, and `runWorkspaceSandboxTask`. The scheduler treats sandbox providers as compute candidates and selects one by declared capabilities such as `runtime.python`, `runtime.codex`, `codex.exec`, `codex.goal`, `workspace.snapshot`, and `workspace.live`.
+
+```typescript
+import {
+  preflightWorkspaceSandboxTask,
+  runWorkspaceSandboxTask,
+} from 'sandbank'
+
+const taskConfig = {
+  workspace,
+  providers: [
+    { provider: e2bProvider, capabilities: ['runtime.python'], priority: 10 },
+    { provider: boxliteProvider, capabilities: ['runtime.python'] },
+  ],
+  task: { kind: 'python' as const, path: '/workspace/generated/task.py', image: 'python-agent' },
+  imageCatalog: {
+    'python-agent': {
+      default: 'python:3.12',
+      e2b: 'e2b-python-template',
+      boxlite: 'python:3.12-slim',
+    },
+  },
+  preflight: { runtime: true },
+}
+
+const preflight = await preflightWorkspaceSandboxTask(taskConfig)
+
+if (!preflight.ok) throw new Error(preflight.errors.join('; '))
+
+await runWorkspaceSandboxTask({
+  ...taskConfig,
+  consistency: { mode: 'branch-merge', conflictResolution: 'keep-both' },
+  preflight: false,
+})
+```
+
+Static preflight checks workspace and provider capabilities before execution. Runtime preflight creates a temporary sandbox and probes image tools such as `python`, `codex`, `git`, `tmux`, `tar`, and `gzip`. `codex.goal` starts a vas-style `tmux` session and leaves the sandbox alive for terminal attach and later workspace sync. See [Provider Scheduler And Workspace Consistency](./docs/provider-scheduler-workspace.md) and [Sandbank Agent Configuration](./docs/sandbank-agent-configuration.md).
+
 ## Agent Tool Use
 
 Sandbank Tool Use is a lower-level protocol than any single model adapter. A model loop, Dynamic Worker capsule, or hosted agent submits a structured `tool.use` request; the Agent Supervisor checks the agent's tool/resource policy before any handler or sandbox provider is invoked.
@@ -292,7 +334,7 @@ pnpm typecheck
 
 ### DB-native Harness API
 
-On the `db-native-agent-harness` branch, the `sandbank` CLI and Worker entrypoint expose a chatw.dev-compatible harness API backed by the Agent Supervisor, db9 workspace storage, and DeepSeek V4 Pro:
+The `sandbank` CLI and Worker entrypoint expose a public Sandbank harness API backed by the Agent Supervisor, db9 workspace storage, and DeepSeek V4 Pro:
 
 ```bash
 DB9_DATABASE_ID=... DB9_TOKEN=... DEEPSEEK_API_KEY=... \
@@ -303,15 +345,16 @@ Routes:
 
 - `GET /health`
 - `GET /api/db-native-agent-harness/capabilities`
+- `POST /api/sandbank-agent-harness/stream`
 - `POST /api/db-native-agent-harness/stream`
 
-The stream emits chatw.dev SSE events, persists run input/output under `/runs/...`, records supervisor state/audit data under `/agents/...`, creates a checkpoint when the workspace backend supports it, and defaults to `deepseek-v4-pro`. It also stores agent memories under `/agents/{agentId}/memory/memories.jsonl`, recalls active `pinned` / `insight` / `session` entries into the model prompt, and writes explicit `remember` / `记住` requests as pinned memories. The Worker-compatible entrypoint is exported as `sandbank/harness-worker`; the Node CLI is for service hosting through `vas dev` or an equivalent deployment path, not as a localhost-only preview.
+The stream emits generic Sandbank SSE events, persists run input/output under `/runs/...`, records supervisor state/audit data under `/agents/...`, creates a checkpoint when the workspace backend supports it, and defaults to `deepseek-v4-pro`. It also stores agent memories under `/agents/{agentId}/memory/memories.jsonl`, recalls active `pinned` / `insight` / `session` entries into the model prompt, and writes explicit `remember` / `记住` requests as pinned memories. The Worker-compatible entrypoint is exported as `sandbank/harness-worker`; the Node CLI is for service hosting through `vas dev` or an equivalent deployment path, not as a localhost-only preview. Model, Workspace, provider, and image requirements are summarized in [Sandbank Agent Configuration](./docs/sandbank-agent-configuration.md).
 
 Benchmark a live harness with one prompt:
 
 ```bash
 pnpm --filter ./packages/sandbank exec tsx src/cli/index.ts harness-benchmark \
-  --base-url https://chatw.dev \
+  --base-url https://your-sandbank-worker.example \
   --question "@agent run a Sandbank harness health check" \
   --json
 ```
@@ -319,7 +362,7 @@ pnpm --filter ./packages/sandbank exec tsx src/cli/index.ts harness-benchmark \
 Run the default benchmark suite:
 
 ```bash
-SANDBANK_HARNESS_BASE_URL=https://chatw.dev pnpm bench:harness -- --json
+SANDBANK_HARNESS_BASE_URL=https://your-sandbank-worker.example pnpm bench:harness -- --json
 ```
 
 The benchmark posts each case to `/api/db-native-agent-harness/stream`, records the SSE timeline, and scores every run out of 100 across transport, lifecycle events, workspace persistence, Dynamic Worker capsule execution, model streaming, case expectations, and latency.

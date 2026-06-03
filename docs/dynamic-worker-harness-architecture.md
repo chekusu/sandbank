@@ -4,8 +4,8 @@ The DB-native harness keeps durable agent identity and state in the workspace ba
 
 ```mermaid
 flowchart LR
-  user["chatw.dev user"] --> chatw["chatw.dev Worker / preview"]
-  chatw --> harness["Sandbank harness API"]
+  user["API client / application user"] --> client["Sandbank Worker API consumer"]
+  client --> harness["Sandbank harness API"]
   harness --> supervisor["AgentSupervisor"]
   supervisor --> workspace["Workspace protocol"]
   workspace --> db9["db9 workspace backend"]
@@ -16,13 +16,13 @@ flowchart LR
   logs --> supervisor
   supervisor --> model["DeepSeek-compatible model API"]
   model --> supervisor
-  supervisor --> chatw
+  supervisor --> client
 ```
 
 ## Roles
 
-- `chatw.dev`: UI and chat stream client. It forwards `@agent` turns to the Sandbank harness API.
-- `Sandbank harness API`: HTTP/SSE boundary for `chatw.dev`, run orchestration, model calls, and deployment surface.
+- `API client`: any application, UI, automation, or service that sends agent turns to the Sandbank harness API.
+- `Sandbank harness API`: HTTP/SSE boundary for external callers, run orchestration, model calls, and deployment surface.
 - `AgentSupervisor`: owns run state, policy checks, audit events, checkpoints, and tool dispatch.
 - `Workspace protocol`: stable capability interface for read/write/append/list/query/log/checkpoint.
 - `db9`: durable workspace backend. Run files, agent state, audit logs, and artifacts live here.

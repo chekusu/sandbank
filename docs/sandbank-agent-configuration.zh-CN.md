@@ -11,7 +11,7 @@
 
 | 区域 | 用于 | 必须配置 |
 |------|------|----------|
-| 模型 | DB-native harness 的模型调用 | `CHATW_DEEPSEEK_API_KEY` 或 `DEEPSEEK_API_KEY` |
+| 模型 | DB-native harness 的模型调用 | `SANDBANK_DEEPSEEK_API_KEY` 或 `DEEPSEEK_API_KEY` |
 | Workspace | 持久化 Agent 状态、运行文件、checkpoint、memory、artifact | `DB9_DATABASE_ID` 和 `DB9_TOKEN`，除非注入了 `createWorkspace` |
 | Provider | Dynamic Worker 以外的 sandbox 计算任务 | 至少一个能力匹配任务的 `SandboxProviderCandidate` |
 | 镜像/runtime | provider 派发任务 | 包含所需工具链的逻辑镜像映射或直接镜像 |
@@ -24,12 +24,12 @@ harness 当前使用 DeepSeek-compatible chat completions API。
 
 | 配置 | 必须 | 默认值 | 说明 |
 |------|:----:|--------|------|
-| `CHATW_DEEPSEEK_API_KEY` | 二选一 | — | 优先使用的 ChatW 专用模型 key |
+| `SANDBANK_DEEPSEEK_API_KEY` | 二选一 | — | 优先使用的 Sandbank harness 模型 key |
 | `DEEPSEEK_API_KEY` | 二选一 | — | fallback 模型 key |
-| `OPENAI_API_KEY` | 条件必须 | — | 仅当 `CHATW_DEEPSEEK_USE_OPENAI_ENV=1`，或 `OPENAI_BASE_URL` 指向 DeepSeek/OpenRouter/gateway endpoint 时使用 |
-| `CHATW_DEEPSEEK_MODEL` | 否 | `deepseek-v4-pro` | 优先模型覆盖 |
+| `OPENAI_API_KEY` | 条件必须 | — | 仅当 `SANDBANK_DEEPSEEK_USE_OPENAI_ENV=1`，或 `OPENAI_BASE_URL` 指向 DeepSeek/OpenRouter/gateway endpoint 时使用 |
+| `SANDBANK_DEEPSEEK_MODEL` | 否 | `deepseek-v4-pro` | 优先模型覆盖 |
 | `DEEPSEEK_MODEL` | 否 | `deepseek-v4-pro` | fallback 模型覆盖 |
-| `CHATW_DEEPSEEK_BASE_URL` | 否 | `https://api.deepseek.com` | 优先 compatible API base URL |
+| `SANDBANK_DEEPSEEK_BASE_URL` | 否 | `https://api.deepseek.com` | 优先 compatible API base URL |
 | `DEEPSEEK_BASE_URL` | 否 | `https://api.deepseek.com` | fallback compatible API base URL |
 | `OPENAI_BASE_URL` | 条件可选 | — | 使用条件与 `OPENAI_API_KEY` 相同 |
 
@@ -62,7 +62,6 @@ DEEPSEEK_MODEL=deepseek-v4-pro \
 | `SANDBANK_HARNESS_HOST` | 否 | `0.0.0.0` | CLI `--host` 会覆盖 |
 | `SANDBANK_HARNESS_PORT` | 否 | `8789` | CLI `--port` 会覆盖；也接受 `PORT` |
 | `SANDBANK_HARNESS_API_KEY` | 否 | — | 启用 bearer-token 鉴权 |
-| `CHATW_HARNESS_API_KEY` | 否 | — | 备用鉴权环境变量名 |
 
 ## Dynamic Worker 配置
 

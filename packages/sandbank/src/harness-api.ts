@@ -10,10 +10,6 @@ import { AgentSupervisor, type AgentSupervisorToolUseConfig } from './agent-supe
 import type { ToolUseRequest } from './tool-use.js'
 
 export interface DbNativeAgentHarnessEnv {
-  CHATW_DEEPSEEK_API_KEY?: string
-  CHATW_DEEPSEEK_BASE_URL?: string
-  CHATW_DEEPSEEK_MODEL?: string
-  CHATW_DEEPSEEK_USE_OPENAI_ENV?: string
   DB9_BASE_URL?: string
   DB9_DATABASE_ID?: string
   DB9_TOKEN?: string
@@ -22,8 +18,11 @@ export interface DbNativeAgentHarnessEnv {
   DEEPSEEK_MODEL?: string
   OPENAI_API_KEY?: string
   OPENAI_BASE_URL?: string
+  SANDBANK_DEEPSEEK_API_KEY?: string
+  SANDBANK_DEEPSEEK_BASE_URL?: string
+  SANDBANK_DEEPSEEK_MODEL?: string
+  SANDBANK_DEEPSEEK_USE_OPENAI_ENV?: string
   SANDBANK_HARNESS_API_KEY?: string
-  CHATW_HARNESS_API_KEY?: string
   SANDBANK_DYNAMIC_WORKER_TIMEOUT_MS?: string
   SANDBANK_DYNAMIC_WORKER_CPU_MS?: string
   SANDBANK_DYNAMIC_WORKER_SUBREQUESTS?: string
@@ -43,7 +42,7 @@ export interface HarnessExecutionCapsuleContext {
   runId: string
   agentId: string
   workspace: WorkspaceAdapter
-  input: ChatWWorkerInput
+  input: HarnessWorkerInput
   env: DbNativeAgentHarnessEnv
 }
 
@@ -84,7 +83,7 @@ export interface DbNativeAgentHarnessServerOptions extends DbNativeAgentHarnessD
   port?: number
 }
 
-interface ChatWWorkerInput {
+interface HarnessWorkerInput {
   message?: string
   history?: Array<{ role?: string; content?: string }>
   model?: { id?: string; label?: string; provider?: string; model?: string }
@@ -94,7 +93,7 @@ interface ChatWWorkerInput {
   metadata?: Record<string, unknown>
 }
 
-type ChatWEvent = Record<string, unknown>
+type HarnessStreamEvent = Record<string, unknown>
 
 interface OpenAIMessage {
   role: 'system' | 'user' | 'assistant'
@@ -129,7 +128,10 @@ export function createDbNativeAgentHarnessHandler(
 
       if (
         request.method === 'POST'
-        && (url.pathname.endsWith('/api/db-native-agent-harness/stream') || url.pathname.endsWith('/api/chatw/stream'))
+        && (
+          url.pathname.endsWith('/api/sandbank-agent-harness/stream')
+          || url.pathname.endsWith('/api/db-native-agent-harness/stream')
+        )
       ) {
         const auth = authorizeHarnessRequest(request, env)
         if (auth) return auth
@@ -146,11 +148,11 @@ async function streamHarness(
   env: DbNativeAgentHarnessEnv,
   deps: DbNativeAgentHarnessDeps,
 ): Promise<Response> {
-  const input = await request.json().catch(() => ({})) as ChatWWorkerInput
+  const input = await request.json().catch(() => ({})) as HarnessWorkerInput
   const encoder = new TextEncoder()
   const { readable, writable } = new TransformStream<Uint8Array>()
   const writer = writable.getWriter()
-  const send = (event: ChatWEvent) => writer.write(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
+  const send = (event: HarnessStreamEvent) => writer.write(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
 
   void (async () => {
     try {
@@ -170,10 +172,10 @@ async function streamHarness(
 }
 
 async function runHarness(
-  input: ChatWWorkerInput,
+  input: HarnessWorkerInput,
   env: DbNativeAgentHarnessEnv,
   deps: DbNativeAgentHarnessDeps,
-  send: (event: ChatWEvent) => Promise<unknown>,
+  send: (event: HarnessStreamEvent) => Promise<unknown>,
 ): Promise<void> {
   const now = deps.now ?? (() => new Date())
   const runId = deps.id?.() ?? createId('run')
@@ -204,7 +206,7 @@ async function runHarness(
 
   try {
     const workspace = await resolveWorkspace(env, deps)
-    const agentId = input.mentions?.agent ?? 'chatw-agent'
+    const agentId = input.mentions?.agent ?? 'sandbank-agent'
     const sanitizedInput = sanitizeInput(input)
     const toolUse = await deps.createToolUse?.({
       runId,
@@ -371,10 +373,10 @@ async function runHarness(
 }
 
 async function runDynamicWorkerCapsule(options: {
-  input: ChatWWorkerInput
+  input: HarnessWorkerInput
   env: DbNativeAgentHarnessEnv
   deps: DbNativeAgentHarnessDeps
-  send: (event: ChatWEvent) => Promise<unknown>
+  send: (event: HarnessStreamEvent) => Promise<unknown>
   harnessId: string
   runId: string
   workspace: WorkspaceAdapter
@@ -556,7 +558,7 @@ async function resolveWorkspace(
 }
 
 async function callDeepSeek(
-  input: ChatWWorkerInput,
+  input: HarnessWorkerInput,
   env: DbNativeAgentHarnessEnv,
   options: {
     apiKey: string
@@ -591,7 +593,7 @@ async function callDeepSeek(
   return response.body
 }
 
-function buildMessages(input: ChatWWorkerInput, runId: string, workspace: WorkspaceAdapter, memories: AgentMemory[] = []): OpenAIMessage[] {
+function buildMessages(input: HarnessWorkerInput, runId: string, workspace: WorkspaceAdapter, memories: AgentMemory[] = []): OpenAIMessage[] {
   const prompt = input.mentions?.cleanedMessage?.trim() || input.message?.trim() || 'Use the DB-native harness.'
   const history = (input.history ?? [])
     .filter(item => item.content && (item.role === 'user' || item.role === 'assistant'))
@@ -630,7 +632,7 @@ function buildMessages(input: ChatWWorkerInput, runId: string, workspace: Worksp
   return messages
 }
 
-function memoryQueryFromInput(input: ChatWWorkerInput): string {
+function memoryQueryFromInput(input: HarnessWorkerInput): string {
   return [
     input.mentions?.cleanedMessage,
     input.message,
@@ -696,7 +698,7 @@ function extractOpenAIText(data: Record<string, unknown>): string {
   return typeof content === 'string' ? content : ''
 }
 
-function sanitizeInput(input: ChatWWorkerInput): ChatWWorkerInput {
+function sanitizeInput(input: HarnessWorkerInput): HarnessWorkerInput {
   return {
     message: input.message,
     history: input.history,
@@ -716,8 +718,8 @@ function describeHarnessCapabilities(env: DbNativeAgentHarnessEnv) {
       routes: [
         'GET /health',
         'GET /api/db-native-agent-harness/capabilities',
+        'POST /api/sandbank-agent-harness/stream',
         'POST /api/db-native-agent-harness/stream',
-        'POST /api/chatw/stream',
       ],
       auth: authRequired ? 'bearer' : 'none',
       sse: true,
@@ -777,24 +779,24 @@ function parsePositiveInt(value: string | undefined, fallback?: number): number 
 }
 
 function resolveModel(env: DbNativeAgentHarnessEnv): string {
-  return env.CHATW_DEEPSEEK_MODEL || env.DEEPSEEK_MODEL || DEFAULT_DEEPSEEK_MODEL
+  return env.SANDBANK_DEEPSEEK_MODEL || env.DEEPSEEK_MODEL || DEFAULT_DEEPSEEK_MODEL
 }
 
 function resolveBaseUrl(env: DbNativeAgentHarnessEnv): string {
-  return env.CHATW_DEEPSEEK_BASE_URL
+  return env.SANDBANK_DEEPSEEK_BASE_URL
     || env.DEEPSEEK_BASE_URL
     || (canUseOpenAIEnvForDeepSeek(env) ? env.OPENAI_BASE_URL : undefined)
     || DEFAULT_DEEPSEEK_BASE_URL
 }
 
 function resolveApiKey(env: DbNativeAgentHarnessEnv): string | undefined {
-  return env.CHATW_DEEPSEEK_API_KEY
+  return env.SANDBANK_DEEPSEEK_API_KEY
     || env.DEEPSEEK_API_KEY
     || (canUseOpenAIEnvForDeepSeek(env) ? env.OPENAI_API_KEY : undefined)
 }
 
 function resolveHarnessApiKey(env: DbNativeAgentHarnessEnv): string | undefined {
-  return env.SANDBANK_HARNESS_API_KEY || env.CHATW_HARNESS_API_KEY
+  return env.SANDBANK_HARNESS_API_KEY
 }
 
 function authorizeHarnessRequest(request: Request, env: DbNativeAgentHarnessEnv): Response | undefined {
@@ -806,7 +808,7 @@ function authorizeHarnessRequest(request: Request, env: DbNativeAgentHarnessEnv)
 }
 
 function canUseOpenAIEnvForDeepSeek(env: DbNativeAgentHarnessEnv): boolean {
-  if (env.CHATW_DEEPSEEK_USE_OPENAI_ENV === '1') return true
+  if (env.SANDBANK_DEEPSEEK_USE_OPENAI_ENV === '1') return true
   return /deepseek|openrouter|gateway\/deepseek/i.test(env.OPENAI_BASE_URL ?? '')
 }
 

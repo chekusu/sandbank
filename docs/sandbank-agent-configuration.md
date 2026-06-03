@@ -11,7 +11,7 @@ This guide covers the configuration developers need before running a Sandbank Ag
 
 | Area | Required for | Required settings |
 |------|--------------|-------------------|
-| Model | DB-native harness model calls | `CHATW_DEEPSEEK_API_KEY` or `DEEPSEEK_API_KEY` |
+| Model | DB-native harness model calls | `SANDBANK_DEEPSEEK_API_KEY` or `DEEPSEEK_API_KEY` |
 | Workspace | Durable agent state, run files, checkpoints, memory, artifacts | `DB9_DATABASE_ID` and `DB9_TOKEN`, unless `createWorkspace` is injected |
 | Provider | Sandbox compute tasks outside Dynamic Worker | At least one configured `SandboxProviderCandidate` whose capabilities match the task |
 | Image/runtime | Provider-dispatched tasks | A logical image mapping or direct image that contains the required tools |
@@ -24,12 +24,12 @@ The harness currently uses a DeepSeek-compatible chat completions API.
 
 | Setting | Required | Default | Notes |
 |---------|:--------:|---------|-------|
-| `CHATW_DEEPSEEK_API_KEY` | One key required | — | Preferred ChatW-specific model key |
+| `SANDBANK_DEEPSEEK_API_KEY` | One key required | — | Preferred Sandbank harness model key |
 | `DEEPSEEK_API_KEY` | One key required | — | Fallback model key |
-| `OPENAI_API_KEY` | Conditional | — | Used only when `CHATW_DEEPSEEK_USE_OPENAI_ENV=1` or `OPENAI_BASE_URL` points at a DeepSeek/OpenRouter/gateway endpoint |
-| `CHATW_DEEPSEEK_MODEL` | No | `deepseek-v4-pro` | Preferred model override |
+| `OPENAI_API_KEY` | Conditional | — | Used only when `SANDBANK_DEEPSEEK_USE_OPENAI_ENV=1` or `OPENAI_BASE_URL` points at a DeepSeek/OpenRouter/gateway endpoint |
+| `SANDBANK_DEEPSEEK_MODEL` | No | `deepseek-v4-pro` | Preferred model override |
 | `DEEPSEEK_MODEL` | No | `deepseek-v4-pro` | Fallback model override |
-| `CHATW_DEEPSEEK_BASE_URL` | No | `https://api.deepseek.com` | Preferred compatible API base URL |
+| `SANDBANK_DEEPSEEK_BASE_URL` | No | `https://api.deepseek.com` | Preferred compatible API base URL |
 | `DEEPSEEK_BASE_URL` | No | `https://api.deepseek.com` | Fallback compatible API base URL |
 | `OPENAI_BASE_URL` | Conditional | — | Used only under the same OpenAI-env condition as `OPENAI_API_KEY` |
 
@@ -62,7 +62,6 @@ DEEPSEEK_MODEL=deepseek-v4-pro \
 | `SANDBANK_HARNESS_HOST` | No | `0.0.0.0` | CLI `--host` overrides it |
 | `SANDBANK_HARNESS_PORT` | No | `8789` | CLI `--port` overrides it; `PORT` is also accepted |
 | `SANDBANK_HARNESS_API_KEY` | No | — | Enables bearer-token auth |
-| `CHATW_HARNESS_API_KEY` | No | — | Alternate auth env name |
 
 ## Dynamic Worker Configuration
 

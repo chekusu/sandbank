@@ -14,11 +14,9 @@ export async function harnessBenchmarkCommand(args: string[], flags: CliFlags): 
 
   const baseUrl = takeOption(args, '--base-url')
     ?? process.env['SANDBANK_HARNESS_BASE_URL']
-    ?? process.env['CHATW_HARNESS_BASE_URL']
     ?? 'http://127.0.0.1:8789'
   const apiKey = takeOption(args, '--api-key')
     ?? process.env['SANDBANK_HARNESS_API_KEY']
-    ?? process.env['CHATW_HARNESS_API_KEY']
   const casesFile = takeOption(args, '--cases')
   const outFile = takeOption(args, '--out')
   const question = takeOption(args, '--question')
