@@ -17,8 +17,10 @@ import { AgentSupervisor } from './agent-supervisor.js'
 import {
   ToolUseRegistry,
   createCloudflareResourceTool,
+  createSearchCodeRunTool,
   createSandboxPythonTool,
   type SandboxProviderToolCandidate,
+  type ToolUseCodeExecutionCapsule,
 } from './tool-use.js'
 
 describe('Tool Use', () => {
@@ -195,6 +197,178 @@ describe('Tool Use', () => {
     expect(e2bProvider.createConfigs).toEqual([{ image: 'e2b-python-template' }])
     expect(dynamicWorkerProvider.createConfigs).toEqual([])
     expect(e2bSandbox.commands).toEqual(['python /workspace/generated/task.py'])
+  })
+
+  it('runs search code through an authorized Dynamic Worker capsule with a scoped search binding', async () => {
+    const workspace = new MemoryWorkspaceAdapter(undefined, { id: 'workspace-search-code' })
+    const search = vi.fn(async (query: string) => ({
+      provider: 'perplexity',
+      query,
+      results: [
+        { title: 'Lature', url: 'https://example.com/lature' },
+        { title: 'GINZA Le Signe', url: 'https://example.com/le-signe' },
+      ],
+    }))
+    const invocations: Parameters<ToolUseCodeExecutionCapsule['invoke']>[0][] = []
+    const dynamicWorker: ToolUseCodeExecutionCapsule = {
+      invoke: vi.fn(async options => {
+        invocations.push(options)
+        const payload = await options.request.json() as {
+          queries: string[]
+          artifactRoot: string
+          resultArtifactName: string
+        }
+        const searchBinding = options.bindings?.['SANDBANK_SEARCH'] as {
+          search(query: string): Promise<{ results: unknown[] }>
+        }
+        const searchResult = await searchBinding.search(payload.queries[0]!)
+        const output = { count: searchResult.results.length }
+        const artifactPath = `${payload.artifactRoot}/${payload.resultArtifactName}`
+        await options.workspace.write(artifactPath, JSON.stringify(output))
+        await options.onEvent?.({
+          type: 'artifact',
+          name: payload.resultArtifactName,
+          path: artifactPath,
+          mediaType: 'application/json',
+          size: 11,
+        })
+        return {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ ok: true, result: output }),
+        }
+      }),
+    }
+    const registry = new ToolUseRegistry()
+      .register(createSearchCodeRunTool({
+        search: { provider: 'perplexity', search },
+      }))
+    const supervisor = new AgentSupervisor({
+      agentId: 'agent-tools',
+      workspace,
+      modelId: 'deepseek-v4-pro',
+      id: () => 'run_search_code',
+      now: () => new Date('2026-06-03T00:00:00.000Z'),
+      checkpointBeforeRun: false,
+      policy: { allowedOps: ['tool.use'] },
+      toolUse: {
+        registry,
+        dynamicWorker,
+        policy: {
+          allowedTools: ['search.code.run'],
+          resources: [
+            { kind: 'dynamic_worker.execution', actions: ['execute'] },
+            { kind: 'runtime.javascript', actions: ['execute'] },
+            { kind: 'external.search', id: 'perplexity', actions: ['query'] },
+            { kind: 'http.egress', id: 'api.example.com', actions: ['fetch'] },
+            { kind: 'workspace.path', scope: '/runs/run_search_code/artifacts', actions: ['write'] },
+          ],
+        },
+      },
+    })
+
+    let toolResult: unknown
+    await supervisor.run({
+      input: { message: 'find Tokyo French restaurants as code' },
+      modelLoop: async context => {
+        toolResult = await context.executeOp({
+          action: 'tool.use',
+          request: {
+            tool: 'search.code.run',
+            input: {
+              code: [
+                'const result = await ctx.search.search(ctx.input.queries[0]);',
+                'await ctx.runtime.artifact("restaurants.json", result, { mediaType: "application/json" });',
+                'return { count: result.results.length };',
+              ].join('\n'),
+              queries: ['tokyo french restaurants'],
+              allowedHosts: ['https://api.example.com/search'],
+              artifactRoot: '/runs/run_search_code/artifacts',
+              resultArtifactName: 'summary.json',
+            },
+          },
+        })
+        return { text: 'search code complete' }
+      },
+    })
+
+    expect(search).toHaveBeenCalledWith('tokyo french restaurants', expect.objectContaining({
+      agentId: 'agent-tools',
+      runId: 'run_search_code',
+    }))
+    expect(dynamicWorker.invoke).toHaveBeenCalledTimes(1)
+    expect(invocations[0]?.code).toContain('async function __sandbankSearchCodeRun(ctx)')
+    expect(invocations[0]?.bindings).toHaveProperty('SANDBANK_SEARCH')
+    expect(invocations[0]?.bindingAllowlist).toContain('SANDBANK_SEARCH')
+    expect(invocations[0]?.workspaceScope).toMatchObject({
+      readablePaths: ['/runs/run_search_code/artifacts'],
+      writablePaths: ['/runs/run_search_code/artifacts'],
+      allowList: false,
+      allowQuery: false,
+      artifactRoot: '/runs/run_search_code/artifacts',
+    })
+    expect(toolResult).toMatchObject({
+      status: 200,
+      result: { count: 2 },
+      artifacts: [
+        expect.objectContaining({ path: '/runs/run_search_code/artifacts/summary.json' }),
+      ],
+    })
+    await expect(workspace.read('/runs/run_search_code/artifacts/summary.json')).resolves.toBe('{"count":2}')
+  })
+
+  it('denies search code before execution when the requested egress host is outside policy', async () => {
+    const workspace = new MemoryWorkspaceAdapter(undefined, { id: 'workspace-search-code-deny' })
+    const dynamicWorker: ToolUseCodeExecutionCapsule = {
+      invoke: vi.fn(async () => ({ status: 200, headers: {}, body: '{}' })),
+    }
+    const registry = new ToolUseRegistry()
+      .register(createSearchCodeRunTool({
+        search: { provider: 'perplexity', search: vi.fn() },
+      }))
+    const supervisor = new AgentSupervisor({
+      agentId: 'agent-tools',
+      workspace,
+      modelId: 'deepseek-v4-pro',
+      id: () => 'run_search_code_denied',
+      now: () => new Date('2026-06-03T00:00:00.000Z'),
+      checkpointBeforeRun: false,
+      policy: { allowedOps: ['tool.use'] },
+      toolUse: {
+        registry,
+        dynamicWorker,
+        policy: {
+          allowedTools: ['search.code.run'],
+          resources: [
+            { kind: 'dynamic_worker.execution', actions: ['execute'] },
+            { kind: 'runtime.javascript', actions: ['execute'] },
+            { kind: 'external.search', id: 'perplexity', actions: ['query'] },
+            { kind: 'workspace.path', scope: '/runs/run_search_code_denied/artifacts', actions: ['write'] },
+          ],
+        },
+      },
+    })
+
+    await expect(supervisor.run({
+      input: { message: 'run generated search code' },
+      modelLoop: async context => {
+        await context.executeOp({
+          action: 'tool.use',
+          request: {
+            tool: 'search.code.run',
+            input: {
+              code: 'return await ctx.search.fetchJson("https://api.example.com/search?q=tokyo");',
+              queries: ['tokyo french restaurants'],
+              allowedHosts: ['api.example.com'],
+              artifactRoot: '/runs/run_search_code_denied/artifacts',
+            },
+          },
+        })
+        return { text: 'should not run' }
+      },
+    })).rejects.toThrow(/does not allow http\.egress:api\.example\.com fetch/)
+
+    expect(dynamicWorker.invoke).not.toHaveBeenCalled()
   })
 })
 

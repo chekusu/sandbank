@@ -145,13 +145,16 @@ function createCloudflareExecutionCapsule(
   if (!createWorkspaceBinding || !createRuntimeBinding) {
     return {
       async invoke(options) {
-        const bindingAllowlist = dynamicWorkerBindingAllowlist(Boolean(options.tools))
+        const bindingAllowlist = dynamicWorkerBindingAllowlist(Boolean(options.tools), options.bindingAllowlist)
         return new DynamicWorkerExecutionCapsule({
           loader,
           bindingAllowlist,
         }).invoke({
           ...options,
-          bindings: options.tools ? { SANDBANK_TOOLS: options.tools } : undefined,
+          bindings: {
+            ...(options.bindings ?? {}),
+            ...(options.tools ? { SANDBANK_TOOLS: options.tools } : {}),
+          },
           bindingAllowlist,
         })
       },
@@ -168,7 +171,7 @@ function createCloudflareExecutionCapsule(
         tools: options.tools,
         events,
       })
-      const bindingAllowlist = dynamicWorkerBindingAllowlist(Boolean(options.tools))
+      const bindingAllowlist = dynamicWorkerBindingAllowlist(Boolean(options.tools), options.bindingAllowlist)
       const toolBinding = options.tools
         ? (createToolUseBinding?.({ props: { invocationId } }) ?? options.tools)
         : undefined
@@ -181,11 +184,13 @@ function createCloudflareExecutionCapsule(
           code: options.code,
           request: options.request,
           bindings: {
+            ...(options.bindings ?? {}),
             SANDBANK_WORKSPACE: createWorkspaceBinding({ props: { invocationId } }),
             SANDBANK_RUNTIME: createRuntimeBinding({ props: { invocationId } }),
             ...(toolBinding ? { SANDBANK_TOOLS: toolBinding } : {}),
           },
           bindingAllowlist,
+          egress: options.egress,
           timeoutMs: options.timeoutMs,
           limits: options.limits,
           onEvent: event => {
@@ -204,12 +209,13 @@ function createCloudflareExecutionCapsule(
   }
 }
 
-function dynamicWorkerBindingAllowlist(includeTools: boolean): string[] {
-  return [
+function dynamicWorkerBindingAllowlist(includeTools: boolean, extra: string[] = []): string[] {
+  return [...new Set([
+    ...extra,
     'SANDBANK_WORKSPACE',
     'SANDBANK_RUNTIME',
     ...(includeTools ? ['SANDBANK_TOOLS'] : []),
-  ]
+  ])]
 }
 
 export default {

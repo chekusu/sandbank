@@ -58,6 +58,11 @@ export type HarnessExecutionEvent =
   | { type: 'log'; level: 'debug' | 'info' | 'warn' | 'error'; message: string; metadata?: Record<string, unknown> }
   | { type: 'artifact'; name: string; path: string; mediaType?: string; size?: number; metadata?: Record<string, unknown> }
 
+export type HarnessExecutionEgressPolicy =
+  | { mode: 'deny' }
+  | { mode: 'inherit' }
+  | { mode: 'gateway'; binding: unknown; allowedHosts?: string[] }
+
 export interface HarnessExecutionCapsule {
   invoke(options: {
     id?: string
@@ -73,6 +78,9 @@ export interface HarnessExecutionCapsule {
     }
     timeoutMs?: number
     limits?: { cpuMs?: number; subRequests?: number }
+    bindings?: Record<string, unknown>
+    bindingAllowlist?: string[]
+    egress?: HarnessExecutionEgressPolicy
     tools?: HarnessToolUseBinding
     onEvent?: (event: HarnessExecutionEvent) => void | Promise<void>
   }): Promise<{ status: number; headers: Record<string, string>; body: string }>

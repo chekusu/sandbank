@@ -28,7 +28,16 @@ export const CLOUDFLARE_TOOL_RESOURCE_KINDS = [
 ] as const
 
 export type ToolUsePermissionAction = string
-export type ToolUseResourceKind = typeof CLOUDFLARE_TOOL_RESOURCE_KINDS[number] | 'sandbox.provider' | 'runtime.python' | (string & {})
+export type ToolUseResourceKind =
+  | typeof CLOUDFLARE_TOOL_RESOURCE_KINDS[number]
+  | 'dynamic_worker.execution'
+  | 'external.search'
+  | 'http.egress'
+  | 'runtime.javascript'
+  | 'runtime.python'
+  | 'sandbox.provider'
+  | 'workspace.path'
+  | (string & {})
 
 export interface ToolUseResourceRef {
   kind: ToolUseResourceKind
@@ -71,6 +80,38 @@ export interface SandboxProviderToolCandidate {
   createConfig?: CreateConfig
 }
 
+export type ToolUseCodeExecutionEvent =
+  | { type: 'stream.chunk'; text: string }
+  | { type: 'log'; level: 'debug' | 'info' | 'warn' | 'error'; message: string; metadata?: Record<string, unknown> }
+  | { type: 'artifact'; name: string; path: string; mediaType?: string; size?: number; metadata?: Record<string, unknown> }
+
+export type ToolUseCodeExecutionEgressPolicy =
+  | { mode: 'deny' }
+  | { mode: 'inherit' }
+  | { mode: 'gateway'; binding: unknown; allowedHosts?: string[] }
+
+export interface ToolUseCodeExecutionCapsule {
+  invoke(options: {
+    id?: string
+    code: string
+    request: Request
+    workspace: WorkspaceAdapter
+    workspaceScope: {
+      readablePaths: string[]
+      writablePaths: string[]
+      allowList: boolean
+      allowQuery: boolean
+      artifactRoot: string
+    }
+    timeoutMs?: number
+    limits?: { cpuMs?: number; subRequests?: number }
+    bindings?: Record<string, unknown>
+    bindingAllowlist?: string[]
+    egress?: ToolUseCodeExecutionEgressPolicy
+    onEvent?: (event: ToolUseCodeExecutionEvent) => void | Promise<void>
+  }): Promise<{ status: number; headers: Record<string, string>; body: string }>
+}
+
 export interface ToolUseExecutionContext {
   agentId: string
   workspaceId: string
@@ -82,6 +123,7 @@ export interface ToolUseExecutionContext {
   imageCatalog?: ProviderImageCatalog
   sandboxConsistency?: WorkspaceSandboxConsistencyOptions
   sandboxPreflight?: WorkspaceSandboxPreflightConfig | false
+  dynamicWorker?: ToolUseCodeExecutionCapsule
   approved?: boolean
 }
 
@@ -215,6 +257,288 @@ export function createCloudflareResourceTool<Output = unknown>(
       action,
     }],
     handler,
+  }
+}
+
+export interface SearchCodeRunToolInput {
+  code: string
+  queries?: string[]
+  allowedHosts?: string[]
+  searchProvider?: string
+  artifactRoot?: string
+  resultArtifactName?: string
+  timeoutMs?: number
+  limits?: { cpuMs?: number; subRequests?: number }
+  metadata?: Record<string, unknown>
+}
+
+export interface SearchCodeProviderContext {
+  agentId: string
+  workspaceId: string
+  runId: string
+  modelId: string
+  allowedHosts: string[]
+  metadata?: Record<string, unknown>
+}
+
+export interface SearchCodeProvider {
+  provider?: string
+  search?: (query: string, context: SearchCodeProviderContext) => Promise<unknown>
+  fetchJson?: (url: string, init: RequestInit | undefined, context: SearchCodeProviderContext) => Promise<unknown>
+  fetchText?: (url: string, init: RequestInit | undefined, context: SearchCodeProviderContext) => Promise<string>
+}
+
+export interface SearchCodeRunToolOptions {
+  name?: string
+  description?: string
+  dynamicWorker?: ToolUseCodeExecutionCapsule
+  search?: SearchCodeProvider
+  defaultTimeoutMs?: number
+  defaultArtifactRoot?: string | ((context: ToolUseExecutionContext) => string)
+  defaultResultArtifactName?: string
+}
+
+export interface SearchCodeRunToolOutput {
+  status: number
+  headers: Record<string, string>
+  body: string
+  result?: unknown
+  artifacts: Array<Extract<ToolUseCodeExecutionEvent, { type: 'artifact' }>>
+}
+
+export function createSearchCodeRunTool(
+  options: SearchCodeRunToolOptions = {},
+): ToolUseDefinition<SearchCodeRunToolInput, SearchCodeRunToolOutput> {
+  return {
+    name: options.name ?? 'search.code.run',
+    description: options.description ?? 'Run bounded JavaScript search code in a Dynamic Worker capsule.',
+    resourceRequirements: (input, context) => {
+      const artifactRoot = resolveSearchCodeArtifactRoot(input, context, options)
+      const searchProvider = input.searchProvider ?? options.search?.provider
+      return [
+        { kind: 'dynamic_worker.execution', action: 'execute' },
+        { kind: 'runtime.javascript', action: 'execute' },
+        { kind: 'external.search', id: searchProvider, action: 'query' },
+        ...normalizeAllowedHosts(input.allowedHosts).map(host => ({ kind: 'http.egress' as const, id: host, action: 'fetch' })),
+        { kind: 'workspace.path', scope: artifactRoot, action: 'write' },
+      ]
+    },
+    async handler(input, context) {
+      if (!input || typeof input.code !== 'string' || !input.code.trim()) {
+        throw new WorkspaceError('INVALID_PATH', 'search.code.run requires a non-empty JavaScript code body.')
+      }
+      const dynamicWorker = options.dynamicWorker ?? context.dynamicWorker
+      if (!dynamicWorker) {
+        throw new WorkspaceError('UNSUPPORTED', 'search.code.run requires a Dynamic Worker execution capsule.')
+      }
+
+      const artifactRoot = resolveSearchCodeArtifactRoot(input, context, options)
+      const resultArtifactName = sanitizeSearchCodeArtifactName(input.resultArtifactName ?? options.defaultResultArtifactName ?? 'search-code-result.json')
+      const allowedHosts = normalizeAllowedHosts(input.allowedHosts)
+      const events: ToolUseCodeExecutionEvent[] = []
+      const result = await dynamicWorker.invoke({
+        code: buildSearchCodeWorkerCode(input.code),
+        request: new Request('https://dynamic-worker.sandbank.dev/search-code/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            agentId: context.agentId,
+            workspaceId: context.workspaceId,
+            runId: context.runId,
+            modelId: context.modelId,
+            queries: input.queries ?? [],
+            allowedHosts,
+            artifactRoot,
+            resultArtifactName,
+            metadata: input.metadata ?? {},
+          }),
+        }),
+        workspace: context.workspace,
+        workspaceScope: {
+          readablePaths: [artifactRoot],
+          writablePaths: [artifactRoot],
+          allowList: false,
+          allowQuery: false,
+          artifactRoot,
+        },
+        timeoutMs: input.timeoutMs ?? options.defaultTimeoutMs,
+        limits: input.limits,
+        bindings: {
+          SANDBANK_SEARCH: createSearchCodeBinding(input, context, options, allowedHosts),
+        },
+        bindingAllowlist: ['SANDBANK_SEARCH'],
+        egress: { mode: 'deny' },
+        onEvent: event => {
+          events.push(event)
+        },
+      })
+
+      if (result.status < 200 || result.status >= 400) {
+        throw new WorkspaceError('CONFLICT', `search.code.run failed with HTTP ${result.status}.`)
+      }
+      const parsed = parseJsonObject(result.body)
+      return {
+        status: result.status,
+        headers: result.headers,
+        body: result.body,
+        result: parsed && 'result' in parsed ? parsed.result : parsed,
+        artifacts: events.filter((event): event is Extract<ToolUseCodeExecutionEvent, { type: 'artifact' }> => event.type === 'artifact'),
+      }
+    },
+  }
+}
+
+function createSearchCodeBinding(
+  input: SearchCodeRunToolInput,
+  context: ToolUseExecutionContext,
+  options: SearchCodeRunToolOptions,
+  allowedHosts: string[],
+) {
+  const provider = options.search
+  const providerContext: SearchCodeProviderContext = {
+    agentId: context.agentId,
+    workspaceId: context.workspaceId,
+    runId: context.runId,
+    modelId: context.modelId,
+    allowedHosts,
+    metadata: input.metadata,
+  }
+  const fetchText = async (url: string, init?: RequestInit): Promise<string> => {
+    assertSearchCodeHostAllowed(url, allowedHosts)
+    if (!provider?.fetchText) throw new Error('search.code.run fetchText provider is not configured.')
+    return provider.fetchText(url, init, providerContext)
+  }
+
+  return {
+    provider: input.searchProvider ?? provider?.provider,
+    allowedHosts,
+    async search(query: string): Promise<unknown> {
+      if (!provider?.search) throw new Error('search.code.run search provider is not configured.')
+      return provider.search(query, providerContext)
+    },
+    async fetchJson(url: string, init?: RequestInit): Promise<unknown> {
+      if (provider?.fetchJson) {
+        assertSearchCodeHostAllowed(url, allowedHosts)
+        return provider.fetchJson(url, init, providerContext)
+      }
+      const text = await fetchText(url, init)
+      try {
+        return JSON.parse(text) as unknown
+      } catch (err) {
+        throw new Error(`search.code.run fetchJson could not parse JSON from ${url}: ${err instanceof Error ? err.message : 'unknown parse error'}`)
+      }
+    },
+    async fetchText(url: string, init?: RequestInit): Promise<string> {
+      return fetchText(url, init)
+    },
+  }
+}
+
+function buildSearchCodeWorkerCode(code: string): string {
+  return `
+async function __sandbankSearchCodeRun(ctx) {
+${indentSearchCode(code)}
+}
+
+async function __sandbankArtifact(runtime, name, data, metadata = {}) {
+  const payload = typeof data === "string" || data instanceof Uint8Array
+    ? data
+    : JSON.stringify(data ?? null, null, 2);
+  return runtime.artifact(name, payload, metadata);
+}
+
+export default {
+  async fetch(request, env) {
+    const input = await request.json();
+    const runtime = env.SANDBANK_RUNTIME;
+    const ctx = {
+      input,
+      search: env.SANDBANK_SEARCH,
+      workspace: env.SANDBANK_WORKSPACE,
+      runtime: {
+        log: (...args) => runtime.log(...args),
+        artifact: (name, data, metadata) => __sandbankArtifact(runtime, name, data, metadata),
+      },
+    };
+    const result = await __sandbankSearchCodeRun(ctx);
+    await ctx.runtime.artifact(input.resultArtifactName || "search-code-result.json", result ?? null, {
+      mediaType: "application/json",
+      source: "search.code.run",
+    });
+    return new Response(JSON.stringify({ ok: true, result: result ?? null }), {
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+}
+`.trim()
+}
+
+function indentSearchCode(code: string): string {
+  return code.split('\n').map(line => `  ${line}`).join('\n')
+}
+
+function resolveSearchCodeArtifactRoot(
+  input: SearchCodeRunToolInput,
+  context: ToolUseExecutionContext,
+  options: SearchCodeRunToolOptions,
+): string {
+  const configured = input.artifactRoot
+    ?? (typeof options.defaultArtifactRoot === 'function'
+      ? options.defaultArtifactRoot(context)
+      : options.defaultArtifactRoot)
+    ?? `/runs/${context.runId}/artifacts/search-code`
+  return normalizeToolPath(configured)
+}
+
+function normalizeAllowedHosts(hosts: string[] | undefined): string[] {
+  return [...new Set(
+    (hosts ?? [])
+      .map(host => normalizeHost(host))
+      .filter((host): host is string => Boolean(host)),
+  )]
+}
+
+function normalizeHost(value: string): string | undefined {
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+  try {
+    return new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`).host.toLowerCase()
+  } catch {
+    return trimmed.toLowerCase()
+  }
+}
+
+function assertSearchCodeHostAllowed(url: string, allowedHosts: string[]): void {
+  const host = normalizeHost(url)
+  if (!host || !allowedHosts.includes(host)) {
+    throw new Error(`search.code.run egress host is not allowed: ${host ?? url}`)
+  }
+}
+
+function sanitizeSearchCodeArtifactName(name: string): string {
+  const safe = name
+    .split(/[\\/]/)
+    .filter(Boolean)
+    .pop()
+    ?.replace(/[^A-Za-z0-9._-]/g, '-')
+    .slice(0, 128)
+  return safe || 'search-code-result.json'
+}
+
+function normalizeToolPath(path: string): string {
+  const trimmed = path.trim()
+  const prefixed = trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+  return prefixed.replace(/\/+/g, '/').replace(/\/$/, '') || '/'
+}
+
+function parseJsonObject(value: string): Record<string, unknown> | undefined {
+  try {
+    const parsed = JSON.parse(value) as unknown
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : undefined
+  } catch {
+    return undefined
   }
 }
 

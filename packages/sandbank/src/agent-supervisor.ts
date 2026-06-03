@@ -9,6 +9,7 @@ import {
 import type { ProviderImageCatalog } from '@sandbank.dev/core'
 import type {
   SandboxProviderToolCandidate,
+  ToolUseCodeExecutionCapsule,
   ToolUseAuthorization,
   ToolUsePolicy,
   ToolUseRegistry,
@@ -133,6 +134,7 @@ export interface AgentSupervisorToolUseConfig {
   imageCatalog?: ProviderImageCatalog
   sandboxConsistency?: WorkspaceSandboxConsistencyOptions
   sandboxPreflight?: WorkspaceSandboxPreflightConfig | false
+  dynamicWorker?: ToolUseCodeExecutionCapsule
 }
 
 export interface AgentSupervisorConfig {
@@ -382,6 +384,7 @@ export class AgentSupervisor {
       imageCatalog: this.toolUse?.imageCatalog,
       sandboxConsistency: this.toolUse?.sandboxConsistency,
       sandboxPreflight: this.toolUse?.sandboxPreflight,
+      dynamicWorker: this.toolUse?.dynamicWorker,
       approved,
     }
   }
