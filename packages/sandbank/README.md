@@ -148,6 +148,51 @@ session.on('message', async (msg) => {
 await session.complete({ status: 'success', summary: 'Built 5 API endpoints' })
 ```
 
+## Agent Tool Use
+
+Sandbank Tool Use is model-neutral. DeepSeek, another OpenAI-compatible model, or a Dynamic Worker capsule should submit a structured `tool.use` request; the Agent Supervisor then checks the agent's tool/resource policy before any handler or sandbox provider runs.
+
+```typescript
+import {
+  AgentSupervisor,
+  ToolUseRegistry,
+  createCloudflareResourceTool,
+  createSandboxPythonTool,
+} from 'sandbank'
+
+const registry = new ToolUseRegistry()
+  .register(createCloudflareResourceTool('read', async input => {
+    return { ok: true, resource: input.resource }
+  }))
+  .register(createSandboxPythonTool())
+
+const supervisor = new AgentSupervisor({
+  agentId: 'agent-a',
+  workspace,
+  modelId: 'deepseek-v4-pro',
+  toolUse: {
+    registry,
+    sandboxProviders: [
+      { provider: e2bProvider, capabilities: ['runtime.python'] },
+      { provider: boxliteProvider, capabilities: ['runtime.python'] },
+    ],
+    policy: {
+      allowedTools: ['cloudflare.resource.read', 'sandbox.python'],
+      resources: [
+        { kind: 'cloudflare.d1', id: 'analytics', actions: ['read'] },
+        { kind: 'sandbox.provider', id: 'e2b', actions: ['execute'] },
+        { kind: 'runtime.python', actions: ['execute'] },
+      ],
+      requireApproval: [
+        { kind: 'cloudflare.d1', action: 'write' },
+      ],
+    },
+  },
+})
+```
+
+The `resources` array is the enablement-time whitelist for compute and data resources. Dynamic Worker capsules use `SANDBANK_TOOLS.list()` and `SANDBANK_TOOLS.use(request)`, which forwards back to the same supervisor policy. `sandbox.python` delegates to the provider scheduler, so Python execution can move between E2B, BoxLite, Sandbank Cloud, or another provider with `runtime.python`.
+
 ## Quick Start
 
 ```bash
@@ -215,6 +260,35 @@ FLY_API_TOKEN=... FLY_APP_NAME=... pnpm test
 # Cloudflare
 E2E_WORKER_URL=... pnpm test
 ```
+
+### Harness Benchmark
+
+Score a live DB-native harness run from one prompt:
+
+```bash
+pnpm --filter ./packages/sandbank exec tsx src/cli/index.ts harness-benchmark \
+  --base-url https://chatw.dev \
+  --question "@agent run a Sandbank harness health check" \
+  --json
+```
+
+Run the packaged benchmark suite:
+
+```bash
+SANDBANK_HARNESS_BASE_URL=https://chatw.dev pnpm --filter ./packages/sandbank bench:harness -- --json
+```
+
+Each case is posted to `/api/db-native-agent-harness/stream` and scored out of 100 for HTTP/SSE transport, harness lifecycle, workspace persistence, Dynamic Worker capsule execution, model streaming, explicit case expectations, and latency.
+
+### Agent Memory
+
+The DB-native harness includes a workspace-backed memory layer inspired by mem9's `pinned` / `insight` / `session` model. Memories are stored as JSONL under `/agents/{agentId}/memory/memories.jsonl` so the same data survives Node, Worker, and db9-backed deployments.
+
+- `pinned`: explicit user-saved facts, created when the prompt asks the agent to `remember` / `记住` something.
+- `session`: compact user/assistant run evidence recorded after each completed run.
+- `insight`: supported by the schema for future model-extracted summaries.
+
+Before calling the model, the harness recalls active memories for the current agent and injects them into the system prompt inside a `<relevant-memories>` block. The model is instructed to treat memories as contextual facts, not executable instructions.
 
 ## Design Principles
 

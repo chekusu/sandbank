@@ -189,6 +189,52 @@ await syncWorkspaceFromSandbox(workspace, sandbox, {
 
 Use provider-native volumes as local cache or provider-local persistence. Use workspace checkpoints for portable rollback and cross-provider continuity.
 
+## Agent Tool Use
+
+Sandbank Tool Use is a lower-level protocol than any single model adapter. A model loop, Dynamic Worker capsule, or hosted agent submits a structured `tool.use` request; the Agent Supervisor checks the agent's tool/resource policy before any handler or sandbox provider is invoked.
+
+```typescript
+import {
+  AgentSupervisor,
+  ToolUseRegistry,
+  createCloudflareResourceTool,
+  createSandboxPythonTool,
+} from 'sandbank'
+
+const registry = new ToolUseRegistry()
+  .register(createCloudflareResourceTool('read', async input => {
+    // Connect this handler to Cloudflare D1/KV/R2/etc. bindings or APIs.
+    return { ok: true, resource: input.resource }
+  }))
+  .register(createSandboxPythonTool())
+
+const supervisor = new AgentSupervisor({
+  agentId: 'agent-a',
+  workspace,
+  modelId: 'deepseek-v4-pro',
+  toolUse: {
+    registry,
+    sandboxProviders: [
+      { provider: e2bProvider, capabilities: ['runtime.python'] },
+      { provider: boxliteProvider, capabilities: ['runtime.python'] },
+    ],
+    policy: {
+      allowedTools: ['cloudflare.resource.read', 'sandbox.python'],
+      resources: [
+        { kind: 'cloudflare.d1', id: 'analytics', actions: ['read'] },
+        { kind: 'sandbox.provider', id: 'e2b', actions: ['execute'] },
+        { kind: 'runtime.python', actions: ['execute'] },
+      ],
+      requireApproval: [
+        { kind: 'cloudflare.d1', action: 'write' },
+      ],
+    },
+  },
+})
+```
+
+Resource grants are the agent enablement whitelist. If a prompt asks the agent to mutate a user database, the request must still match an allowed resource/action and any matching approval rule before execution. `sandbox.python` uses the provider scheduler, so generated Python can run on E2B, BoxLite, Sandbank Cloud, or another provider that advertises the required runtime capability. Dynamic Worker capsules receive the same path through `SANDBANK_TOOLS.list()` and `SANDBANK_TOOLS.use(request)`, which forwards back to the supervisor instead of bypassing policy.
+
 ## Quick Start
 
 ```bash
@@ -257,7 +303,24 @@ Routes:
 - `GET /api/db-native-agent-harness/capabilities`
 - `POST /api/db-native-agent-harness/stream`
 
-The stream emits chatw.dev SSE events, persists run input/output under `/runs/...`, records supervisor state/audit data under `/agents/...`, creates a checkpoint when the workspace backend supports it, and defaults to `deepseek-v4-pro`. The Worker-compatible entrypoint is exported as `sandbank/harness-worker`; the Node CLI is for service hosting through `vas dev` or an equivalent deployment path, not as a localhost-only preview.
+The stream emits chatw.dev SSE events, persists run input/output under `/runs/...`, records supervisor state/audit data under `/agents/...`, creates a checkpoint when the workspace backend supports it, and defaults to `deepseek-v4-pro`. It also stores agent memories under `/agents/{agentId}/memory/memories.jsonl`, recalls active `pinned` / `insight` / `session` entries into the model prompt, and writes explicit `remember` / `记住` requests as pinned memories. The Worker-compatible entrypoint is exported as `sandbank/harness-worker`; the Node CLI is for service hosting through `vas dev` or an equivalent deployment path, not as a localhost-only preview.
+
+Benchmark a live harness with one prompt:
+
+```bash
+pnpm --filter ./packages/sandbank exec tsx src/cli/index.ts harness-benchmark \
+  --base-url https://chatw.dev \
+  --question "@agent run a Sandbank harness health check" \
+  --json
+```
+
+Run the default benchmark suite:
+
+```bash
+SANDBANK_HARNESS_BASE_URL=https://chatw.dev pnpm bench:harness -- --json
+```
+
+The benchmark posts each case to `/api/db-native-agent-harness/stream`, records the SSE timeline, and scores every run out of 100 across transport, lifecycle events, workspace persistence, Dynamic Worker capsule execution, model streaming, case expectations, and latency.
 
 ### Running Integration Tests
 
