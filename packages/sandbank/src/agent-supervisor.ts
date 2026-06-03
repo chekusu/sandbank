@@ -6,6 +6,18 @@ import {
   type WorkspaceData,
   type WorkspaceQuery,
 } from '@sandbank.dev/workspace'
+import type { ProviderImageCatalog } from '@sandbank.dev/core'
+import type {
+  SandboxProviderToolCandidate,
+  ToolUseAuthorization,
+  ToolUsePolicy,
+  ToolUseRegistry,
+  ToolUseRequest,
+} from './tool-use.js'
+import type {
+  WorkspaceSandboxConsistencyOptions,
+  WorkspaceSandboxPreflightConfig,
+} from './provider-scheduler.js'
 
 export type AgentRunStatus = 'running' | 'completed' | 'failed'
 export type AgentSupervisorOpAction =
@@ -14,6 +26,7 @@ export type AgentSupervisorOpAction =
   | 'workspace.append'
   | 'workspace.query'
   | 'function.invoke'
+  | 'tool.use'
 
 export interface AgentRunIdentity {
   agentId: string
@@ -107,6 +120,20 @@ export type AgentSupervisorOp =
     options?: { fs9Scope?: string; timeoutMs?: number; env?: Record<string, string> }
     metadata?: Record<string, unknown>
   }
+  | {
+    action: 'tool.use'
+    request: ToolUseRequest
+    metadata?: Record<string, unknown>
+  }
+
+export interface AgentSupervisorToolUseConfig {
+  registry: ToolUseRegistry
+  policy?: ToolUsePolicy
+  sandboxProviders?: SandboxProviderToolCandidate[]
+  imageCatalog?: ProviderImageCatalog
+  sandboxConsistency?: WorkspaceSandboxConsistencyOptions
+  sandboxPreflight?: WorkspaceSandboxPreflightConfig | false
+}
 
 export interface AgentSupervisorConfig {
   agentId: string
@@ -118,6 +145,7 @@ export interface AgentSupervisorConfig {
   approvalHook?: (request: AgentApprovalRequest) => Promise<boolean | 'approved' | 'rejected'>
   checkpointBeforeRun?: boolean
   auditPath?: string
+  toolUse?: AgentSupervisorToolUseConfig
 }
 
 type InvokableWorkspace = WorkspaceAdapter & {
@@ -146,6 +174,7 @@ export class AgentSupervisor {
   private readonly approvalHook?: AgentSupervisorConfig['approvalHook']
   private readonly checkpointBeforeRun: boolean
   private readonly auditPath: string
+  private readonly toolUse?: AgentSupervisorToolUseConfig
 
   constructor(config: AgentSupervisorConfig) {
     this.agentId = config.agentId
@@ -154,7 +183,7 @@ export class AgentSupervisor {
     this.id = config.id ?? (() => createId('run'))
     this.now = config.now ?? (() => new Date())
     this.policy = {
-      allowedOps: config.policy?.allowedOps ?? defaultAllowedOps(config.workspace),
+      allowedOps: config.policy?.allowedOps ?? defaultAllowedOps(config.workspace, Boolean(config.toolUse)),
       query: config.policy?.query ?? 'all',
       requireApproval: config.policy?.requireApproval ?? [],
       writablePaths: config.policy?.writablePaths,
@@ -164,6 +193,7 @@ export class AgentSupervisor {
     this.approvalHook = config.approvalHook
     this.checkpointBeforeRun = config.checkpointBeforeRun ?? true
     this.auditPath = config.auditPath ?? '/.sandbank/agent-ops.jsonl'
+    this.toolUse = config.toolUse
   }
 
   async run<Input>(options: AgentSupervisorRunOptions<Input>): Promise<AgentSupervisorRunResult> {
@@ -257,8 +287,16 @@ export class AgentSupervisor {
 
   async executeOp(run: AgentRunState, op: AgentSupervisorOp, emit?: (event: AgentSupervisorEvent) => Promise<void>): Promise<unknown> {
     this.assertAllowed(run, op)
-    if (this.policy.requireApproval.includes(op.action)) {
-      const approved = await this.requestApproval(run, op, emit)
+    const toolAuthorization = op.action === 'tool.use'
+      ? await this.authorizeToolUse(run, op)
+      : undefined
+    const approvalReason = toolAuthorization?.requiresApproval
+      ? toolAuthorization.approvalReason
+      : undefined
+    const approvalRequired = this.policy.requireApproval.includes(op.action) || Boolean(toolAuthorization?.requiresApproval)
+    let approved = false
+    if (approvalRequired) {
+      approved = await this.requestApproval(run, op, emit, approvalReason)
       if (!approved) {
         throw new WorkspaceError('LOCKED', `Agent operation rejected by approval hook: ${op.action}`)
       }
@@ -282,6 +320,9 @@ export class AgentSupervisor {
         throw unsupportedCapability(op.action)
       }
       result = await this.workspace.invokeFunction(op.name, op.input, op.options)
+    } else if (op.action === 'tool.use') {
+      if (!this.toolUse) throw unsupportedCapability(op.action)
+      result = await this.toolUse.registry.execute(op.request, this.toolUseContext(run, approved || !approvalRequired))
     } else {
       throw unsupportedCapability((op as { action: string }).action)
     }
@@ -306,14 +347,43 @@ export class AgentSupervisor {
     run: AgentRunState,
     op: AgentSupervisorOp,
     emit?: (event: AgentSupervisorEvent) => Promise<void>,
+    reason = `${op.action} requires approval`,
   ): Promise<boolean> {
     await emit?.({ type: 'approval', label: 'approval.requested', detail: op.action, raw: op })
     await this.audit(run, 'approval.requested', sanitizeOp(op))
     if (!this.approvalHook) return false
-    const result = await this.approvalHook({ run, op, reason: `${op.action} requires approval` })
+    const result = await this.approvalHook({ run, op, reason })
     const approved = result === true || result === 'approved'
     await this.audit(run, approved ? 'approval.approved' : 'approval.rejected', sanitizeOp(op))
     return approved
+  }
+
+  private async authorizeToolUse(
+    run: AgentRunState,
+    op: Extract<AgentSupervisorOp, { action: 'tool.use' }>,
+  ): Promise<ToolUseAuthorization> {
+    if (!this.toolUse) throw unsupportedCapability(op.action)
+    const authorization = await this.toolUse.registry.authorize(op.request, this.toolUseContext(run, false))
+    if (!authorization.ok) {
+      throw new WorkspaceError(authorization.errorCode ?? 'LOCKED', authorization.error ?? `Tool use denied: ${op.request.tool}`)
+    }
+    return authorization
+  }
+
+  private toolUseContext(run: AgentRunState, approved: boolean) {
+    return {
+      agentId: this.agentId,
+      workspaceId: this.workspace.id,
+      runId: run.runId,
+      modelId: this.modelId,
+      workspace: this.workspace,
+      policy: this.toolUse?.policy ?? {},
+      sandboxProviders: this.toolUse?.sandboxProviders,
+      imageCatalog: this.toolUse?.imageCatalog,
+      sandboxConsistency: this.toolUse?.sandboxConsistency,
+      sandboxPreflight: this.toolUse?.sandboxPreflight,
+      approved,
+    }
   }
 
   private assertAllowed(run: AgentRunState, op: AgentSupervisorOp): void {
@@ -368,10 +438,12 @@ export class AgentSupervisor {
   }
 }
 
-function defaultAllowedOps(workspace: WorkspaceAdapter): AgentSupervisorOpAction[] {
-  return workspace.capabilities.functionRuntime
+function defaultAllowedOps(workspace: WorkspaceAdapter, toolUseEnabled = false): AgentSupervisorOpAction[] {
+  const ops: AgentSupervisorOpAction[] = workspace.capabilities.functionRuntime
     ? [...DEFAULT_ALLOWED_OPS, 'function.invoke']
     : DEFAULT_ALLOWED_OPS
+  if (toolUseEnabled) ops.push('tool.use')
+  return ops
 }
 
 function unsupportedCapability(action: string): WorkspaceError {
@@ -426,6 +498,15 @@ function sanitizeOp(op: AgentSupervisorOp): Record<string, unknown> {
       metadata: op.metadata,
     }
   }
+  if (op.action === 'tool.use') {
+    return {
+      action: op.action,
+      tool: op.request.tool,
+      reason: op.request.reason,
+      metadata: op.metadata,
+      requestMetadata: op.request.metadata,
+    }
+  }
   return {
     action: op.action,
     path: 'path' in op ? op.path : undefined,
@@ -435,6 +516,7 @@ function sanitizeOp(op: AgentSupervisorOp): Record<string, unknown> {
 
 function opDetail(op: AgentSupervisorOp): string {
   if (op.action === 'function.invoke') return op.name
+  if (op.action === 'tool.use') return op.request.tool
   if (op.action === 'workspace.query') return op.query.kind ?? (op.query.sql ? 'sql' : 'query')
   return op.path
 }

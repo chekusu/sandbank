@@ -5,6 +5,7 @@ import {
   type DbNativeAgentHarnessEnv,
   type HarnessExecutionCapsule,
   type HarnessExecutionEvent,
+  type HarnessToolUseBinding,
 } from './harness-api.js'
 import {
   DynamicWorkerExecutionCapsule,
@@ -43,6 +44,7 @@ type CapsuleBindingProps = {
 type CapsuleBindingEntry = {
   workspace: WorkspaceAdapter
   workspaceScope: CapsuleWorkspaceScope
+  tools?: HarnessToolUseBinding
   events: HarnessExecutionEvent[]
 }
 
@@ -119,6 +121,19 @@ export class SandbankRuntimeBinding extends WorkerEntrypoint<DbNativeAgentHarnes
   }
 }
 
+export class SandbankToolUseBinding extends WorkerEntrypoint<DbNativeAgentHarnessWorkerEnv, CapsuleBindingProps> {
+  async list(): Promise<Array<{ name: string; description?: string }>> {
+    const entry = bindingEntry(this.ctx.props.invocationId)
+    return entry.tools?.list() ?? []
+  }
+
+  async use(request: Parameters<HarnessToolUseBinding['use']>[0]): Promise<unknown> {
+    const entry = bindingEntry(this.ctx.props.invocationId)
+    if (!entry.tools) throw new Error('Dynamic Worker Tool Use binding is not configured for this invocation')
+    return entry.tools.use(request)
+  }
+}
+
 function createCloudflareExecutionCapsule(
   loader: DynamicWorkerLoader,
   ctx: ExecutionContext,
@@ -126,11 +141,21 @@ function createCloudflareExecutionCapsule(
   const loopback = (ctx as CloudflareExecutionContextWithExports).exports
   const createWorkspaceBinding = loopback?.SandbankWorkspaceBinding
   const createRuntimeBinding = loopback?.SandbankRuntimeBinding
+  const createToolUseBinding = loopback?.SandbankToolUseBinding
   if (!createWorkspaceBinding || !createRuntimeBinding) {
-    return new DynamicWorkerExecutionCapsule({
-      loader,
-      bindingAllowlist: ['SANDBANK_WORKSPACE', 'SANDBANK_RUNTIME'],
-    })
+    return {
+      async invoke(options) {
+        const bindingAllowlist = dynamicWorkerBindingAllowlist(Boolean(options.tools))
+        return new DynamicWorkerExecutionCapsule({
+          loader,
+          bindingAllowlist,
+        }).invoke({
+          ...options,
+          bindings: options.tools ? { SANDBANK_TOOLS: options.tools } : undefined,
+          bindingAllowlist,
+        })
+      },
+    }
   }
 
   return {
@@ -140,12 +165,17 @@ function createCloudflareExecutionCapsule(
       bindingRegistry.set(invocationId, {
         workspace: options.workspace,
         workspaceScope: options.workspaceScope,
+        tools: options.tools,
         events,
       })
+      const bindingAllowlist = dynamicWorkerBindingAllowlist(Boolean(options.tools))
+      const toolBinding = options.tools
+        ? (createToolUseBinding?.({ props: { invocationId } }) ?? options.tools)
+        : undefined
       try {
         const result = await new DynamicWorkerExecutionCapsule({
           loader,
-          bindingAllowlist: ['SANDBANK_WORKSPACE', 'SANDBANK_RUNTIME'],
+          bindingAllowlist,
         }).invoke({
           id: options.id,
           code: options.code,
@@ -153,8 +183,9 @@ function createCloudflareExecutionCapsule(
           bindings: {
             SANDBANK_WORKSPACE: createWorkspaceBinding({ props: { invocationId } }),
             SANDBANK_RUNTIME: createRuntimeBinding({ props: { invocationId } }),
+            ...(toolBinding ? { SANDBANK_TOOLS: toolBinding } : {}),
           },
-          bindingAllowlist: ['SANDBANK_WORKSPACE', 'SANDBANK_RUNTIME'],
+          bindingAllowlist,
           timeoutMs: options.timeoutMs,
           limits: options.limits,
           onEvent: event => {
@@ -171,6 +202,14 @@ function createCloudflareExecutionCapsule(
       }
     },
   }
+}
+
+function dynamicWorkerBindingAllowlist(includeTools: boolean): string[] {
+  return [
+    'SANDBANK_WORKSPACE',
+    'SANDBANK_RUNTIME',
+    ...(includeTools ? ['SANDBANK_TOOLS'] : []),
+  ]
 }
 
 export default {

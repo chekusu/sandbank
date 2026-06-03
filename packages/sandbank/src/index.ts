@@ -10,4 +10,7 @@
  *   pnpm add sandbank @sandbank.dev/boxlite
  */
 export * from '@sandbank.dev/core'
+export * from './agent-memory.js'
+export * from './agent-supervisor.js'
 export * from './provider-scheduler.js'
+export * from './tool-use.js'

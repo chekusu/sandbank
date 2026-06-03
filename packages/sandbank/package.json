@@ -51,6 +51,10 @@
     "./agent-supervisor": {
       "types": "./dist/agent-supervisor.d.ts",
       "import": "./dist/agent-supervisor.js"
+    },
+    "./tool-use": {
+      "types": "./dist/tool-use.d.ts",
+      "import": "./dist/tool-use.js"
     }
   },
   "files": [

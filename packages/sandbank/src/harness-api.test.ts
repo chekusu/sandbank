@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MemoryWorkspaceAdapter, type WorkspaceAdapter } from '@sandbank.dev/workspace'
+import { AgentMemoryStore } from './agent-memory.js'
 import { createDbNativeAgentHarnessHandler } from './harness-api.js'
 import { startDbNativeAgentHarnessServer } from './harness-node.js'
 import harnessWorker from './harness-worker.js'
+import { ToolUseRegistry, createCloudflareResourceTool } from './tool-use.js'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -63,6 +65,64 @@ describe('createDbNativeAgentHarnessHandler', () => {
     ]))
     await expect(workspace.read('/runs/run_1/assistant.md')).resolves.toBe('hello from db9')
     await expect(workspace.read('/runs/index.jsonl')).resolves.toContain('run_1')
+  })
+
+  it('recalls persistent agent memories into the model prompt and records new run memories', async () => {
+    const workspace = new MemoryWorkspaceAdapter(undefined, { id: 'db9:test' })
+    const seedMemory = new AgentMemoryStore({
+      agentId: 'codex',
+      workspace,
+      id: () => 'mem_seed',
+      now: () => new Date('2026-05-26T00:00:00.000Z'),
+    })
+    await seedMemory.createMemory({
+      content: 'Prefer Cloudflare Dynamic Workers for production harness rollouts.',
+      memoryType: 'pinned',
+      tags: ['deployment'],
+    })
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => {
+      const encoder = new TextEncoder()
+      return new Response(new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"memory aware answer"}}]}\n\n'))
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+          controller.close()
+        },
+      }), {
+        headers: { 'Content-Type': 'text/event-stream' },
+      })
+    })
+    const handler = createDbNativeAgentHarnessHandler({
+      DB9_DATABASE_ID: 'db-test',
+      DEEPSEEK_API_KEY: 'deepseek-key',
+    }, {
+      createWorkspace: async () => workspace,
+      fetchImpl,
+      now: () => new Date('2026-05-27T00:00:00.000Z'),
+      id: () => 'run_mem',
+    })
+
+    const response = await handler.fetch(new Request('https://sandbank.dev/api/db-native-agent-harness/stream', {
+      method: 'POST',
+      body: JSON.stringify({
+        message: '@codex please remember that staging uses db9 fs9. How should we deploy the harness?',
+        mentions: {
+          cleanedMessage: 'please remember that staging uses db9 fs9. How should we deploy the harness?',
+          agent: 'codex',
+        },
+      }),
+    }))
+
+    const body = await response.text()
+    const requestBody = JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body)) as { messages: Array<{ content: string }> }
+    const memoryLog = await workspace.read('/agents/codex/memory/memories.jsonl')
+
+    expect(requestBody.messages[0]?.content).toContain('<relevant-memories>')
+    expect(requestBody.messages[0]?.content).toContain('Prefer Cloudflare Dynamic Workers for production harness rollouts.')
+    expect(body).toContain('memory.recalled')
+    expect(String(memoryLog)).toContain('"memory_type":"session"')
+    expect(String(memoryLog)).toContain('"memory_type":"pinned"')
+    expect(String(memoryLog)).toContain('staging uses db9 fs9')
   })
 
   it('invokes a configured Dynamic Worker capsule for the run and forwards its events', async () => {
@@ -134,6 +194,80 @@ describe('createDbNativeAgentHarnessHandler', () => {
     expect(body).toContain('capsule-complete')
     expect(body).toContain('"text":"model answer"')
     await expect(workspace.read('/workspace/from-capsule.txt')).resolves.toBe('capsule wrote this')
+  })
+
+  it('exposes configured Tool Use to Dynamic Worker capsules through the supervisor policy', async () => {
+    const workspace = new MemoryWorkspaceAdapter(undefined, { id: 'db9:test' })
+    const toolHandler = vi.fn(async input => ({ ok: true, input }))
+    const registry = new ToolUseRegistry()
+      .register(createCloudflareResourceTool('read', toolHandler))
+    const fetchImpl = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) => {
+      const encoder = new TextEncoder()
+      return new Response(new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"model answer"}}]}\n\n'))
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+          controller.close()
+        },
+      }))
+    })
+    let capsuleToolList: unknown
+    let capsuleToolResult: unknown
+    const invokeCapsule = vi.fn(async (options: {
+      tools?: {
+        list(): Promise<Array<{ name: string; description?: string }>>
+        use(request: { tool: string; input?: unknown; reason?: string; metadata?: Record<string, unknown> }): Promise<unknown>
+      }
+      onEvent?: (event: { type: 'log'; level: 'info'; message: string }) => Promise<void> | void
+    }) => {
+      capsuleToolList = await options.tools?.list()
+      capsuleToolResult = await options.tools?.use({
+        tool: 'cloudflare.resource.read',
+        input: {
+          resource: { kind: 'cloudflare.d1', id: 'analytics' },
+          operation: 'select',
+        },
+        reason: 'capsule needs readonly analytics context',
+      })
+      await options.onEvent?.({ type: 'log', level: 'info', message: 'tool use completed' })
+      return { status: 200, headers: {}, body: 'capsule-complete' }
+    })
+    const handler = createDbNativeAgentHarnessHandler({
+      DB9_DATABASE_ID: 'db-test',
+      DEEPSEEK_API_KEY: 'deepseek-key',
+    }, {
+      createWorkspace: async () => workspace,
+      createToolUse: async () => ({
+        registry,
+        policy: {
+          allowedTools: ['cloudflare.resource.read'],
+          resources: [
+            { kind: 'cloudflare.d1', id: 'analytics', actions: ['read'] },
+          ],
+        },
+      }),
+      createExecutionCapsule: () => ({ invoke: invokeCapsule }),
+      fetchImpl,
+      now: () => new Date('2026-06-03T00:00:00.000Z'),
+      id: () => 'run_dw_tools',
+    })
+
+    const response = await handler.fetch(new Request('https://sandbank.dev/api/db-native-agent-harness/stream', {
+      method: 'POST',
+      body: JSON.stringify({
+        message: '@codex run a capsule tool',
+        mentions: { cleanedMessage: 'run a capsule tool', agent: 'codex' },
+      }),
+    }))
+    const body = await response.text()
+
+    expect(capsuleToolList).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'cloudflare.resource.read' }),
+    ]))
+    expect(capsuleToolResult).toMatchObject({ ok: true })
+    expect(toolHandler).toHaveBeenCalledTimes(1)
+    expect(body).toContain('tool use completed')
+    expect(body).toContain('"text":"model answer"')
   })
 
   it('reports missing db9 configuration as a chatw error event', async () => {
@@ -429,6 +563,12 @@ describe('createDbNativeAgentHarnessHandler', () => {
     await expect(capabilities.json()).resolves.toMatchObject({
       api: { auth: 'bearer', sse: true },
       supervisor: { runState: true, policyChecks: true },
+      memory: { enabled: true, types: ['pinned', 'insight', 'session'] },
+      toolUse: {
+        supported: true,
+        dynamicWorkerBinding: 'SANDBANK_TOOLS',
+        sandboxProviderSwitching: true,
+      },
       deployment: { nodeCli: 'sandbank harness-api' },
     })
 
@@ -470,5 +610,79 @@ describe('createDbNativeAgentHarnessHandler', () => {
       service: 'sandbank-db-native-agent-harness',
       supervisor: true,
     })
+  })
+
+  it('passes Tool Use binding into a Cloudflare Dynamic Worker loader', async () => {
+    const workspace = new MemoryWorkspaceAdapter(undefined, { id: 'db9:test' })
+    const toolHandler = vi.fn(async input => ({ ok: true, input }))
+    const registry = new ToolUseRegistry()
+      .register(createCloudflareResourceTool('read', toolHandler))
+    const fetchImpl = vi.fn(async () => {
+      const encoder = new TextEncoder()
+      return new Response(new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"model answer"}}]}\n\n'))
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+          controller.close()
+        },
+      }))
+    })
+    let loaderToolList: unknown
+    let loaderToolResult: unknown
+    const loader = {
+      load: vi.fn(async (code: { env?: Record<string, unknown> }) => {
+        const tools = code.env?.['SANDBANK_TOOLS'] as {
+          list(): Promise<Array<{ name: string; description?: string }>>
+          use(request: { tool: string; input?: unknown }): Promise<unknown>
+        } | undefined
+        loaderToolList = await tools?.list()
+        loaderToolResult = await tools?.use({
+          tool: 'cloudflare.resource.read',
+          input: {
+            resource: { kind: 'cloudflare.d1', id: 'analytics' },
+            operation: 'select',
+          },
+        })
+        return {
+          fetch: async () => new Response('worker-tools-ok'),
+        }
+      }),
+      get: vi.fn(),
+    }
+
+    const response = await harnessWorker.fetch(new Request('https://sandbank.dev/api/db-native-agent-harness/stream', {
+      method: 'POST',
+      body: JSON.stringify({
+        message: '@codex run worker tool',
+        mentions: { cleanedMessage: 'run worker tool', agent: 'codex' },
+      }),
+    }), {
+      DB9_DATABASE_ID: 'db-test',
+      DEEPSEEK_API_KEY: 'deepseek-key',
+      SANDBANK_DYNAMIC_WORKER_LOADER: loader,
+    }, undefined, {
+      createWorkspace: async () => workspace,
+      createToolUse: async () => ({
+        registry,
+        policy: {
+          allowedTools: ['cloudflare.resource.read'],
+          resources: [
+            { kind: 'cloudflare.d1', id: 'analytics', actions: ['read'] },
+          ],
+        },
+      }),
+      fetchImpl,
+      now: () => new Date('2026-06-03T00:00:00.000Z'),
+      id: () => 'run_worker_tools',
+    })
+    const body = await response.text()
+
+    expect(loaderToolList).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'cloudflare.resource.read' }),
+    ]))
+    expect(loaderToolResult).toMatchObject({ ok: true })
+    expect(toolHandler).toHaveBeenCalledTimes(1)
+    expect(body).toContain('worker-tools-ok')
+    expect(body).toContain('"text":"model answer"')
   })
 })
