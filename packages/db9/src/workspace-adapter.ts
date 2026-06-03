@@ -138,6 +138,11 @@ interface Db9CheckpointSnapshot {
   files: Db9CheckpointFile[]
 }
 
+interface Db9CheckpointRoot {
+  path: string
+  kind: 'directory' | 'file'
+}
+
 type Db9WorkspaceQuery = WorkspaceQuery & {
   kind?: WorkspaceQuery['kind'] | 'search'
   text?: string
@@ -159,6 +164,7 @@ export class Db9WorkspaceAdapter implements WorkspaceAdapter {
   private readonly branchManager?: Db9BranchManager
   private readonly watchTransport?: Db9WatchTransport
   private readonly watchers = new Set<Watcher>()
+  private fs9ExtensionReady?: Promise<void>
 
   constructor(config: Db9WorkspaceAdapterConfig) {
     this.dbId = config.dbId
@@ -193,14 +199,20 @@ export class Db9WorkspaceAdapter implements WorkspaceAdapter {
   }
 
   async list(path: string, opts: ListOptions = {}): Promise<WorkspaceEntry[]> {
-    const result = await this.exec(
-      `SELECT * FROM extensions.fs9_list(${sqlString(normalizePath(path))}, ${opts.recursive ? 'true' : 'false'})`,
-    )
-    return rowsAsObjects(result).map(rowToEntry)
+    await this.ensureFs9Extension()
+    const result = opts.recursive
+      ? await this.exec(
+        `SELECT DISTINCT _path AS path, 'file' AS type, NULL::bigint AS size, NULL::bigint AS mode, NULL::text AS mtime FROM extensions.fs9(${sqlString(fs9RecursivePattern(path))})`,
+      )
+      : await this.exec(
+        `SELECT path, type, size, mode, mtime FROM extensions.fs9(${sqlString(fs9DirectoryPath(path))})`,
+      )
+    const entries = rowsAsObjects(result).map(rowToEntry)
+    return opts.limit === undefined ? entries : entries.slice(0, Math.max(0, opts.limit))
   }
 
   async read(path: string, opts: ReadOptions = {}): Promise<WorkspaceData> {
-    const result = await this.exec(`SELECT extensions.fs9_read(${sqlString(normalizePath(path))}) AS data`)
+    const result = await this.exec(`SELECT fs9_read(${sqlString(normalizePath(path))}) AS data`)
     const value = result.rows[0]?.[0]
     if (value === undefined || value === null) {
       throw new WorkspaceError('NOT_FOUND', `db9 fs9 path not found: ${normalizePath(path)}`)
@@ -211,9 +223,8 @@ export class Db9WorkspaceAdapter implements WorkspaceAdapter {
 
   async write(path: string, data: WorkspaceData, _opts: WriteOptions = {}): Promise<WorkspaceEntry> {
     const normalized = normalizePath(path)
-    await this.exec(
-      `SELECT extensions.fs9_write(${sqlString(normalized)}, ${sqlString(dataToText(data))}) AS ok`,
-    )
+    await this.ensureParentDirectory(normalized)
+    await this.exec(`SELECT fs9_write(${sqlString(normalized)}, ${sqlString(dataToText(data))}) AS bytes`)
     const entry = await this.syntheticEntry(normalized, data)
     this.emit({ type: 'write', timestamp: timestamp(), path: normalized, entry })
     return entry
@@ -221,9 +232,8 @@ export class Db9WorkspaceAdapter implements WorkspaceAdapter {
 
   async append(path: string, data: WorkspaceData): Promise<WorkspaceEntry> {
     const normalized = normalizePath(path)
-    await this.exec(
-      `SELECT extensions.fs9_append(${sqlString(normalized)}, ${sqlString(dataToText(data))}) AS ok`,
-    )
+    await this.ensureParentDirectory(normalized)
+    await this.exec(`SELECT fs9_append(${sqlString(normalized)}, ${sqlString(dataToText(data))}) AS bytes`)
     const entry = await this.syntheticEntry(normalized, data)
     this.emit({ type: 'append', timestamp: timestamp(), path: normalized, entry })
     return entry
@@ -231,7 +241,7 @@ export class Db9WorkspaceAdapter implements WorkspaceAdapter {
 
   async remove(path: string, _opts: RemoveOptions = {}): Promise<void> {
     const normalized = normalizePath(path)
-    await this.exec(`SELECT extensions.fs9_remove(${sqlString(normalized)}) AS ok`)
+    await this.exec(`SELECT fs9_remove(${sqlString(normalized)}) AS removed`)
     this.emit({ type: 'remove', timestamp: timestamp(), path: normalized })
   }
 
@@ -241,10 +251,18 @@ export class Db9WorkspaceAdapter implements WorkspaceAdapter {
 
   async stat(path: string): Promise<WorkspaceEntry> {
     const normalized = normalizePath(path)
-    const result = await this.exec(`SELECT * FROM extensions.fs9_stat(${sqlString(normalized)})`)
+    const result = await this.exec(
+      `SELECT fs9_exists(${sqlString(normalized)}) AS exists, fs9_size(${sqlString(normalized)}) AS size, fs9_mtime(${sqlString(normalized)}) AS modified_at`,
+    )
     const row = rowsAsObjects(result)[0]
-    if (!row) throw new WorkspaceError('NOT_FOUND', `db9 fs9 path not found: ${normalized}`)
-    return rowToEntry(row)
+    if (!row || !row['exists']) throw new WorkspaceError('NOT_FOUND', `db9 fs9 path not found: ${normalized}`)
+    return {
+      path: normalized,
+      name: basename(normalized),
+      type: normalized.endsWith('/') ? 'directory' : 'file',
+      size: numberOrUndefined(row['size']),
+      modifiedAt: stringOrUndefined(row['modified_at']),
+    }
   }
 
   async query(expr: WorkspaceQuery): Promise<QueryResult> {
@@ -275,7 +293,7 @@ export class Db9WorkspaceAdapter implements WorkspaceAdapter {
     const result = await this.exec(query.sql)
     const rows = rowsAsObjects(result)
     return {
-      columns: result.columns,
+      columns: resultColumnNames(result),
       rows,
       rowCount: result.row_count,
     }
@@ -293,7 +311,7 @@ export class Db9WorkspaceAdapter implements WorkspaceAdapter {
       label,
       createdAt: timestamp(),
     }
-    const files = await this.snapshotFiles()
+    const files = await this.snapshotFiles(checkpointRoots(label))
     const snapshot: Db9CheckpointSnapshot = { version: 1, checkpoint, files }
     await this.write(checkpointPath(checkpoint), JSON.stringify(snapshot, null, 2))
     this.emit({ type: 'checkpoint', timestamp: checkpoint.createdAt, checkpoint })
@@ -406,7 +424,7 @@ export class Db9WorkspaceAdapter implements WorkspaceAdapter {
       : `SELECT * FROM extensions.fs9_search(${sqlString(path)}, ${sqlString(options.text)}, ${limit})`
     const result = await this.exec(sql)
     const rows = rowsAsObjects(result)
-    return { columns: result.columns, rows, rowCount: result.row_count }
+    return { columns: resultColumnNames(result), rows, rowCount: result.row_count }
   }
 
   async invokeFunction(
@@ -429,19 +447,58 @@ export class Db9WorkspaceAdapter implements WorkspaceAdapter {
   }
 
   private async exec(sql: string): Promise<Db9SqlResult> {
-    return this.client.executeSQL(this.dbId, sql)
+    const result = await this.client.executeSQL(this.dbId, sql)
+    if (result.error || result.command?.toUpperCase() === 'ERROR') {
+      const message = result.error || `db9 returned SQL command ${result.command}`
+      throw new WorkspaceError(sqlErrorCode(message), `db9 SQL error: ${message}`)
+    }
+    return result
   }
 
-  private async snapshotFiles(): Promise<Db9CheckpointFile[]> {
-    const entries = await this.list('/', { recursive: true })
-    const files: Db9CheckpointFile[] = []
-    for (const entry of entries) {
-      if (entry.type === 'directory') continue
-      if (entry.path.startsWith('/.sandbank/checkpoints/')) continue
-      const data = await this.read(entry.path)
-      files.push({ path: entry.path, data: dataToText(data) })
+  private async ensureParentDirectory(path: string): Promise<void> {
+    const parent = dirname(path)
+    if (parent === '/') return
+    await this.exec(`SELECT fs9_mkdir(${sqlString(parent)}, true) AS ok`)
+  }
+
+  private async ensureFs9Extension(): Promise<void> {
+    if (!this.fs9ExtensionReady) {
+      this.fs9ExtensionReady = this.exec('CREATE EXTENSION IF NOT EXISTS fs9')
+        .then(() => undefined)
+        .catch(err => {
+          this.fs9ExtensionReady = undefined
+          throw err
+        })
     }
-    return files.sort((a, b) => a.path.localeCompare(b.path))
+    await this.fs9ExtensionReady
+  }
+
+  private async snapshotFiles(roots: Db9CheckpointRoot[] = [{ path: '/', kind: 'directory' }]): Promise<Db9CheckpointFile[]> {
+    const files = new Map<string, Db9CheckpointFile>()
+    for (const root of roots) {
+      if (root.kind === 'file') {
+        const data = await this.read(root.path).catch(err => {
+          if (err instanceof WorkspaceError && err.code === 'NOT_FOUND') return undefined
+          throw err
+        })
+        if (data !== undefined && !root.path.startsWith('/.sandbank/checkpoints/')) {
+          files.set(root.path, { path: root.path, data: dataToText(data) })
+        }
+        continue
+      }
+
+      const entries = await this.list(root.path, { recursive: true }).catch(err => {
+        if (err instanceof WorkspaceError && err.code === 'NOT_FOUND') return [] as WorkspaceEntry[]
+        throw err
+      })
+      for (const entry of entries) {
+        if (entry.type === 'directory') continue
+        if (entry.path.startsWith('/.sandbank/checkpoints/')) continue
+        const data = await this.read(entry.path)
+        files.set(entry.path, { path: entry.path, data: dataToText(data) })
+      }
+    }
+    return [...files.values()].sort((a, b) => a.path.localeCompare(b.path))
   }
 
   private async loadSnapshot(ref: WorkspaceRef): Promise<Db9CheckpointSnapshot> {
@@ -491,7 +548,15 @@ export class Db9WorkspaceAdapter implements WorkspaceAdapter {
 }
 
 function rowsAsObjects(result: Db9SqlResult): Record<string, unknown>[] {
-  return result.rows.map(row => Object.fromEntries(result.columns.map((column, index) => [column, row[index]])))
+  return result.rows.map(row => Object.fromEntries(result.columns.map((column, index) => [columnName(column), row[index]])))
+}
+
+function resultColumnNames(result: Db9SqlResult): string[] {
+  return result.columns.map(columnName)
+}
+
+function columnName(column: Db9SqlResult['columns'][number]): string {
+  return typeof column === 'string' ? column : column.name
 }
 
 function isFunctionInvoker(value: Db9WorkspaceClient): value is Db9WorkspaceClient & Db9FunctionInvoker {
@@ -508,6 +573,18 @@ function isBranchManager(value: Db9WorkspaceClient): value is Db9WorkspaceClient
 
 function checkpointPath(checkpoint: Pick<Checkpoint, 'id'>): string {
   return `/.sandbank/checkpoints/${checkpoint.id}.json`
+}
+
+function checkpointRoots(label: string | undefined): Db9CheckpointRoot[] {
+  const match = /^agent:([^:]+):run:([^:]+):before$/.exec(label ?? '')
+  if (!match) return [{ path: '/', kind: 'directory' }]
+  const agentId = normalizePathSegment(match[1]!)
+  const runId = normalizePathSegment(match[2]!)
+  return [
+    { path: `/agents/${agentId}/runs/${runId}`, kind: 'directory' },
+    { path: '/.sandbank/oplog.jsonl', kind: 'file' },
+    { path: '/.sandbank/agent-ops.jsonl', kind: 'file' },
+  ]
 }
 
 function idFromCheckpointRef(ref: string): string {
@@ -540,14 +617,14 @@ function rowToEntry(row: Record<string, unknown>): WorkspaceEntry {
   return {
     path,
     name: String(row['name'] ?? basename(path)),
-    type: rawType === 'directory' ? 'directory'
+    type: rawType === 'directory' || rawType === 'dir' ? 'directory'
       : path.startsWith('/messages/') ? 'message'
       : path.startsWith('/.artifacts/') ? 'artifact'
       : path.startsWith('/tables/') ? 'table'
       : 'file',
     size: numberOrUndefined(row['size'] ?? row['bytes']),
     createdAt: stringOrUndefined(row['created_at']),
-    modifiedAt: stringOrUndefined(row['modified_at'] ?? row['updated_at']),
+    modifiedAt: stringOrUndefined(row['modified_at'] ?? row['updated_at'] ?? row['mtime']),
   }
 }
 
@@ -562,9 +639,29 @@ function normalizePath(input: string): string {
   return `/${parts.join('/')}`
 }
 
+function normalizePathSegment(input: string): string {
+  return input.replace(/\\/g, '/').split('/').filter(Boolean).join('_') || 'unknown'
+}
+
 function basename(path: string): string {
   if (path === '/') return '/'
   return path.slice(path.lastIndexOf('/') + 1)
+}
+
+function dirname(path: string): string {
+  if (path === '/') return '/'
+  const index = path.lastIndexOf('/')
+  return index <= 0 ? '/' : path.slice(0, index)
+}
+
+function fs9DirectoryPath(path: string): string {
+  const normalized = normalizePath(path)
+  return normalized === '/' ? '/' : `${normalized}/`
+}
+
+function fs9RecursivePattern(path: string): string {
+  const normalized = normalizePath(path)
+  return normalized === '/' ? '/**/*' : `${normalized}/**/*`
 }
 
 function sqlString(value: string): string {
@@ -587,6 +684,10 @@ function numberOrUndefined(value: unknown): number | undefined {
 
 function stringOrUndefined(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined
+}
+
+function sqlErrorCode(message: string): 'NOT_FOUND' | 'CONFLICT' {
+  return /\bNotFound\b|not found/i.test(message) ? 'NOT_FOUND' : 'CONFLICT'
 }
 
 function unsupported(feature: string): never {

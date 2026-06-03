@@ -12,11 +12,18 @@ export interface Db9Database {
   created_at: string
 }
 
+export type Db9SqlColumn = string | {
+  name: string
+  type?: string
+}
+
 /** db9 API 响应：SQL 执行结果 */
 export interface Db9SqlResult {
-  columns: string[]
+  columns: Db9SqlColumn[]
   rows: unknown[][]
   row_count: number
+  command?: string
+  error?: string
 }
 
 export interface Db9FunctionInvokeOptions {
