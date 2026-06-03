@@ -241,6 +241,7 @@ import {
   AgentSupervisor,
   ToolUseRegistry,
   createCloudflareResourceTool,
+  createSearchCodeRunTool,
   createSandboxPythonTool,
 } from 'sandbank'
 
@@ -248,6 +249,13 @@ const registry = new ToolUseRegistry()
   .register(createCloudflareResourceTool('read', async input => {
     // Connect this handler to Cloudflare D1/KV/R2/etc. bindings or APIs.
     return { ok: true, resource: input.resource }
+  }))
+  .register(createSearchCodeRunTool({
+    search: {
+      provider: 'perplexity',
+      search: async query => searchProvider.search(query),
+      fetchJson: async url => searchProvider.fetchJson(url),
+    },
   }))
   .register(createSandboxPythonTool())
 
@@ -257,14 +265,20 @@ const supervisor = new AgentSupervisor({
   modelId: 'deepseek-v4-pro',
   toolUse: {
     registry,
+    dynamicWorker,
     sandboxProviders: [
       { provider: e2bProvider, capabilities: ['runtime.python'] },
       { provider: boxliteProvider, capabilities: ['runtime.python'] },
     ],
     policy: {
-      allowedTools: ['cloudflare.resource.read', 'sandbox.python'],
+      allowedTools: ['cloudflare.resource.read', 'search.code.run', 'sandbox.python'],
       resources: [
         { kind: 'cloudflare.d1', id: 'analytics', actions: ['read'] },
+        { kind: 'dynamic_worker.execution', actions: ['execute'] },
+        { kind: 'runtime.javascript', actions: ['execute'] },
+        { kind: 'external.search', id: 'perplexity', actions: ['query'] },
+        { kind: 'http.egress', id: 'api.example.com', actions: ['fetch'] },
+        { kind: 'workspace.path', scope: '/runs', actions: ['write'] },
         { kind: 'sandbox.provider', id: 'e2b', actions: ['execute'] },
         { kind: 'runtime.python', actions: ['execute'] },
       ],
@@ -276,7 +290,9 @@ const supervisor = new AgentSupervisor({
 })
 ```
 
-Resource grants are the agent enablement whitelist. If a prompt asks the agent to mutate a user database, the request must still match an allowed resource/action and any matching approval rule before execution. `sandbox.python` uses the provider scheduler, so generated Python can run on E2B, BoxLite, Sandbank Cloud, or another provider that advertises the required runtime capability. Dynamic Worker capsules receive the same path through `SANDBANK_TOOLS.list()` and `SANDBANK_TOOLS.use(request)`, which forwards back to the supervisor instead of bypassing policy.
+Tool registration is currently host-driven: the third-party caller creates a `ToolUseRegistry`, injects tool definitions with `.register(...)`, and enables them per agent/run through policy. Sandbank does not expose a remote endpoint that lets arbitrary users register new tools at runtime.
+
+Resource grants are the agent enablement whitelist. If a prompt asks the agent to mutate a user database, the request must still match an allowed resource/action and any matching approval rule before execution. `search.code.run` is the code mode tool: the model can generate a JavaScript function body, Dynamic Worker executes it, and the code can only access controlled `ctx.search`, `ctx.workspace`, and `ctx.runtime` bindings. Raw egress still has to match an `http.egress` grant. `sandbox.python` uses the provider scheduler, so generated Python can run on E2B, BoxLite, Sandbank Cloud, or another provider that advertises the required runtime capability. Dynamic Worker capsules receive the same path through `SANDBANK_TOOLS.list()` and `SANDBANK_TOOLS.use(request)`, which forwards back to the supervisor instead of bypassing policy.
 
 ## Quick Start
 

@@ -73,6 +73,20 @@ Dynamic Worker capsule は任意です。制限付き JavaScript を実行し、
 | `SANDBANK_DYNAMIC_WORKER_CPU_MS` | いいえ | provider デフォルト | 対応している場合の CPU budget |
 | `SANDBANK_DYNAMIC_WORKER_SUBREQUESTS` | いいえ | provider デフォルト | 対応している場合の subrequest budget |
 
+## Tool 登録と Code Mode
+
+Tool 登録は host application が制御します。任意の end user が runtime に remote 登録する仕組みではありません。第三者の呼び出し側は `ToolUseRegistry` を作成し、`createCloudflareResourceTool`、`createSearchCodeRunTool`、`createSandboxPythonTool` などの定義を登録したうえで、`toolUse.policy` により各 agent run で使える tool/resource を明示的に有効化します。
+
+`search.code.run` は Dynamic Worker code mode tool です。JavaScript function body を実行し、制御された binding を `ctx.search`、`ctx.workspace`、`ctx.runtime` として公開します。有効化する場合、agent policy には必要に応じて次の resource grant を与えてください。
+
+- `dynamic_worker.execution:execute`
+- `runtime.javascript:execute`
+- `external.search:{provider}:query`
+- 許可する outbound host ごとの `http.egress:{host}:fetch`
+- artifact 生成先の `workspace.path:{artifactRoot}:write`
+
+この tool は raw outbound をデフォルトで拒否し、検索/取得処理は host 側で登録した search provider から提供される想定です。
+
 ## Provider Scheduler 設定
 
 タスクに sandbox provider が必要な場合は provider scheduler を使います。必須入力は次のとおりです。

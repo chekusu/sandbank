@@ -73,6 +73,20 @@ Dynamic Worker capsules are optional. They run bounded JavaScript code and recei
 | `SANDBANK_DYNAMIC_WORKER_CPU_MS` | No | Provider default | CPU budget when supported |
 | `SANDBANK_DYNAMIC_WORKER_SUBREQUESTS` | No | Provider default | Subrequest budget when supported |
 
+## Tool Registration And Code Mode
+
+Tool registration is controlled by the host application, not by arbitrary end users. A third-party caller creates a `ToolUseRegistry`, registers definitions such as `createCloudflareResourceTool`, `createSearchCodeRunTool`, and `createSandboxPythonTool`, then enables the exact tools/resources for each agent run through `toolUse.policy`.
+
+`search.code.run` is the Dynamic Worker code mode tool. It runs a JavaScript function body and exposes controlled bindings as `ctx.search`, `ctx.workspace`, and `ctx.runtime`. Enable it only when the agent policy grants the required resources:
+
+- `dynamic_worker.execution:execute`
+- `runtime.javascript:execute`
+- `external.search:{provider}:query`
+- `http.egress:{host}:fetch` for each allowed outbound host
+- `workspace.path:{artifactRoot}:write` for generated artifacts
+
+The tool denies raw outbound access by default and expects search/fetch behavior to come from the registered host-side search provider.
+
 ## Provider Scheduler Configuration
 
 Use provider scheduling when a task needs a sandbox provider. The required input is:

@@ -73,6 +73,20 @@ Dynamic Worker capsule 是可选的。它运行受限 JavaScript，并收到 sco
 | `SANDBANK_DYNAMIC_WORKER_CPU_MS` | 否 | provider 默认 | 支持时的 CPU budget |
 | `SANDBANK_DYNAMIC_WORKER_SUBREQUESTS` | 否 | provider 默认 | 支持时的 subrequest budget |
 
+## Tool 注册与 Code Mode
+
+Tool 注册由宿主应用控制，不由任意终端用户动态注册。第三方调用方创建 `ToolUseRegistry`，注册 `createCloudflareResourceTool`、`createSearchCodeRunTool`、`createSandboxPythonTool` 等定义，然后通过 `toolUse.policy` 为每次 agent run 精确启用工具和资源。
+
+`search.code.run` 是 Dynamic Worker code mode 工具。它运行 JavaScript 函数体，并把受控能力暴露为 `ctx.search`、`ctx.workspace`、`ctx.runtime`。启用它时，agent policy 至少需要按需授予：
+
+- `dynamic_worker.execution:execute`
+- `runtime.javascript:execute`
+- `external.search:{provider}:query`
+- 每个允许出站 host 的 `http.egress:{host}:fetch`
+- 生成 artifact 所需的 `workspace.path:{artifactRoot}:write`
+
+该工具默认禁止裸 outbound，搜索/抓取行为应来自宿主注册的 search provider。
+
 ## Provider 调度器配置
 
 当任务需要 sandbox provider 时使用 provider 调度。必须输入：

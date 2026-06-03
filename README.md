@@ -241,6 +241,7 @@ import {
   AgentSupervisor,
   ToolUseRegistry,
   createCloudflareResourceTool,
+  createSearchCodeRunTool,
   createSandboxPythonTool,
 } from 'sandbank'
 
@@ -248,6 +249,13 @@ const registry = new ToolUseRegistry()
   .register(createCloudflareResourceTool('read', async input => {
     // 这里可以连接 Cloudflare D1/KV/R2 等 bindings 或 API。
     return { ok: true, resource: input.resource }
+  }))
+  .register(createSearchCodeRunTool({
+    search: {
+      provider: 'perplexity',
+      search: async query => searchProvider.search(query),
+      fetchJson: async url => searchProvider.fetchJson(url),
+    },
   }))
   .register(createSandboxPythonTool())
 
@@ -257,14 +265,20 @@ const supervisor = new AgentSupervisor({
   modelId: 'deepseek-v4-pro',
   toolUse: {
     registry,
+    dynamicWorker,
     sandboxProviders: [
       { provider: e2bProvider, capabilities: ['runtime.python'] },
       { provider: boxliteProvider, capabilities: ['runtime.python'] },
     ],
     policy: {
-      allowedTools: ['cloudflare.resource.read', 'sandbox.python'],
+      allowedTools: ['cloudflare.resource.read', 'search.code.run', 'sandbox.python'],
       resources: [
         { kind: 'cloudflare.d1', id: 'analytics', actions: ['read'] },
+        { kind: 'dynamic_worker.execution', actions: ['execute'] },
+        { kind: 'runtime.javascript', actions: ['execute'] },
+        { kind: 'external.search', id: 'perplexity', actions: ['query'] },
+        { kind: 'http.egress', id: 'api.example.com', actions: ['fetch'] },
+        { kind: 'workspace.path', scope: '/runs', actions: ['write'] },
         { kind: 'sandbox.provider', id: 'e2b', actions: ['execute'] },
         { kind: 'runtime.python', actions: ['execute'] },
       ],
@@ -276,7 +290,9 @@ const supervisor = new AgentSupervisor({
 })
 ```
 
-`resources` 是 Agent 启用时的计算和数据资源白名单。即使 prompt 要求 Agent 修改用户数据库，请求也必须匹配允许的 resource/action，并满足对应的 approval rule。`sandbox.python` 会走 provider scheduler，因此 Dynamic Worker 生成的 Python 可以派发到 E2B、BoxLite、Sandbank Cloud 或任何声明 `runtime.python` 的 provider。Dynamic Worker capsule 通过 `SANDBANK_TOOLS.list()` 和 `SANDBANK_TOOLS.use(request)` 走同一条 supervisor policy，不会绕过权限控制。
+Tool 注册目前由第三方宿主代码完成：调用方在初始化 harness/supervisor 时创建 `ToolUseRegistry`，通过 `.register(...)` 注入工具定义，再用每个 agent/run 的 policy 启用白名单。当前没有开放“远程任意用户注册 tool”的管理端点。
+
+`resources` 是 Agent 启用时的计算和数据资源白名单。即使 prompt 要求 Agent 修改用户数据库，请求也必须匹配允许的 resource/action，并满足对应的 approval rule。`search.code.run` 是 code mode：模型可以生成 JavaScript 函数体，由 Dynamic Worker 执行，并只能通过 `ctx.search`、`ctx.workspace`、`ctx.runtime` 这些受控 binding 访问能力；裸网络访问仍要匹配 `http.egress` grant。`sandbox.python` 会走 provider scheduler，因此 Dynamic Worker 生成的 Python 可以派发到 E2B、BoxLite、Sandbank Cloud 或任何声明 `runtime.python` 的 provider。Dynamic Worker capsule 通过 `SANDBANK_TOOLS.list()` 和 `SANDBANK_TOOLS.use(request)` 走同一条 supervisor policy，不会绕过权限控制。
 
 ## 快速开始
 
