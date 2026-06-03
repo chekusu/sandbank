@@ -33,3 +33,15 @@ export {
   memoryWorkspaceCapabilities,
 } from './memory.js'
 export type { MemoryWorkspaceSnapshot } from './memory.js'
+export {
+  materializeWorkspaceToSandbox,
+  syncWorkspaceFromSandbox,
+} from './sandbox-bridge.js'
+export type {
+  MaterializeWorkspaceOptions,
+  SandboxArchiveMount,
+  SyncWorkspaceOptions,
+  SyncWorkspaceResult,
+  WorkspaceBridgeResult,
+  WorkspaceSandboxPathOptions,
+} from './sandbox-bridge.js'

@@ -54,6 +54,7 @@ Swap `DaytonaAdapter` for `FlyioAdapter` or `CloudflareAdapter` — zero code ch
 |---------|-------------|
 | [`@sandbank.dev/core`](./packages/core) | Provider abstraction, capability system, error types |
 | [`@sandbank.dev/skills`](./packages/skills) | Skill registry and local filesystem loader |
+| [`@sandbank.dev/workspace`](./packages/workspace) | Durable workspace protocol, checkpoints, and sandbox materialization helpers |
 | [`@sandbank.dev/daytona`](./packages/daytona) | Daytona cloud sandbox adapter |
 | [`@sandbank.dev/flyio`](./packages/flyio) | Fly.io Machines adapter |
 | [`@sandbank.dev/cloudflare`](./packages/cloudflare) | Cloudflare Workers adapter |
@@ -155,6 +156,38 @@ session.on('message', async (msg) => {
 
 await session.complete({ status: 'success', summary: 'Built 5 API endpoints' })
 ```
+
+## Provider-Neutral Workspaces
+
+Provider-native volumes are provider-specific resources. A Fly.io volume, E2B volume, Daytona volume, and Cloudflare storage binding are not the same durable disk. For seamless provider switching, keep durable state in a `WorkspaceAdapter`, materialize it into the sandbox before execution, then sync changed files back and checkpoint the workspace.
+
+```typescript
+import {
+  MemoryWorkspaceAdapter,
+  materializeWorkspaceToSandbox,
+  syncWorkspaceFromSandbox,
+} from '@sandbank.dev/workspace'
+
+const workspace = new MemoryWorkspaceAdapter()
+await workspace.write('/workspace/task.md', 'ship it')
+
+const sandbox = await provider.create({ image: 'node:22' })
+await materializeWorkspaceToSandbox(workspace, sandbox, {
+  workspacePath: '/workspace',
+  sandboxPath: '/workspace',
+})
+
+await sandbox.exec('echo done > /workspace/result.txt')
+
+await syncWorkspaceFromSandbox(workspace, sandbox, {
+  workspacePath: '/workspace',
+  sandboxPath: '/workspace',
+  deleteMissing: true,
+  checkpointLabel: 'after provider run',
+})
+```
+
+Use provider-native volumes as local cache or provider-local persistence. Use workspace checkpoints for portable rollback and cross-provider continuity.
 
 ## Quick Start
 
