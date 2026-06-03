@@ -29,6 +29,57 @@ function createExecutionContext(env: Record<string, unknown>) {
 }
 
 describe('db-native harness Worker e2e', () => {
+  it('runs search code mode through the Worker endpoint and Dynamic Worker loader', async () => {
+    const loadedCodes: DynamicWorkerCode[] = []
+    const loader: DynamicWorkerLoader = {
+      get: vi.fn(),
+      load: vi.fn(async code => {
+        loadedCodes.push(code)
+        return {
+          fetch: async request => executeDynamicWorkerModule(code, request),
+        }
+      }),
+    }
+    const env = {
+      DB9_DATABASE_ID: 'db-test',
+      DEEPSEEK_API_KEY: 'deepseek-key',
+      LOADER: loader,
+    }
+
+    const response = await harnessWorker.fetch(new Request('https://sandbank.dev/__sandbank/e2e/search-code', {
+      method: 'POST',
+      body: JSON.stringify({ query: 'tokyo french restaurants' }),
+    }), env, createExecutionContext(env))
+    const body = await response.json() as {
+      ok: boolean
+      tool: {
+        result: { query: string; count: number; top: string }
+        artifacts: Array<{ name: string; path: string }>
+      }
+      artifacts: Record<string, unknown>
+    }
+
+    expect(response.status, JSON.stringify(body)).toBe(200)
+    expect(body.ok).toBe(true)
+    expect(body.tool.result).toMatchObject({
+      query: 'tokyo french restaurants',
+      count: 3,
+      top: 'Lature',
+    })
+    expect(body.tool.artifacts.map(artifact => artifact.name).sort()).toEqual(['restaurants.json', 'summary.json'])
+    expect(body.artifacts['restaurants.json']).toMatchObject({
+      query: 'tokyo french restaurants',
+      ranked: expect.arrayContaining([
+        expect.objectContaining({ title: 'Lature' }),
+      ]),
+    })
+    expect(loader.load).toHaveBeenCalledTimes(1)
+    expect(loadedCodes[0]?.globalOutbound).toBeNull()
+    expect(loadedCodes[0]?.env).toHaveProperty('SANDBANK_SEARCH')
+    expect(loadedCodes[0]?.env).toHaveProperty('SANDBANK_WORKSPACE')
+    expect(loadedCodes[0]?.env).toHaveProperty('SANDBANK_RUNTIME')
+  })
+
   it('routes Dynamic Worker capsule calls through Cloudflare loopback bindings', async () => {
     const loadedCodes: DynamicWorkerCode[] = []
     const loader: DynamicWorkerLoader = {
@@ -203,3 +254,11 @@ describe('db-native harness Worker e2e', () => {
     await expect(binding.read('/workspace/missing.txt')).rejects.toThrow('Dynamic Worker binding context not found: missing')
   })
 })
+
+async function executeDynamicWorkerModule(code: DynamicWorkerCode, request: Request): Promise<Response> {
+  const moduleContent = code.modules[code.mainModule]
+  if (typeof moduleContent !== 'string') throw new Error(`Expected string module for ${code.mainModule}`)
+  const moduleUrl = `data:text/javascript;base64,${Buffer.from(moduleContent).toString('base64')}`
+  const mod = await import(moduleUrl) as { default: { fetch(request: Request, env: Record<string, unknown>): Promise<Response> } }
+  return mod.default.fetch(request, code.env ?? {})
+}

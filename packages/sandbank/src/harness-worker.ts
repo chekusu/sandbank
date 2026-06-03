@@ -7,12 +7,19 @@ import {
   type HarnessExecutionEvent,
   type HarnessToolUseBinding,
 } from './harness-api.js'
+import { AgentSupervisor } from './agent-supervisor.js'
+import {
+  ToolUseRegistry,
+  createSearchCodeRunTool,
+  type SearchCodeRunToolOutput,
+} from './tool-use.js'
 import {
   DynamicWorkerExecutionCapsule,
   createDynamicWorkerRuntimeBinding,
   createDynamicWorkerWorkspaceBinding,
   type DynamicWorkerLoader,
 } from '@sandbank.dev/cloudflare/dynamic-worker-capsule'
+import { MemoryWorkspaceAdapter } from '@sandbank.dev/workspace'
 import type {
   ListOptions,
   QueryResult,
@@ -226,6 +233,10 @@ export default {
     deps: DbNativeAgentHarnessDeps = {},
   ): Promise<Response> {
     const loader = env.SANDBANK_DYNAMIC_WORKER_LOADER ?? env.LOADER
+    const url = new URL(request.url)
+    if (request.method === 'POST' && url.pathname.endsWith('/__sandbank/e2e/search-code')) {
+      return runSearchCodeModeE2e(request, env, ctx, loader)
+    }
     return createDbNativeAgentHarnessHandler(env, loader
       ? {
         ...deps,
@@ -233,4 +244,138 @@ export default {
       }
       : deps).fetch(request)
   },
+}
+
+async function runSearchCodeModeE2e(
+  request: Request,
+  env: DbNativeAgentHarnessWorkerEnv,
+  ctx: ExecutionContext,
+  loader: DynamicWorkerLoader | undefined,
+): Promise<Response> {
+  if (!loader) {
+    return workerJson({ ok: false, error: 'dynamic_worker_loader_unavailable' }, 501)
+  }
+
+  try {
+    const body = await request.json().catch(() => ({})) as { query?: unknown }
+    const query = typeof body.query === 'string' && body.query.trim()
+      ? body.query.trim()
+      : 'tokyo french restaurants'
+    const runId = `code_mode_e2e_${Date.now().toString(36)}`
+    const workspace = new MemoryWorkspaceAdapter(undefined, { id: `memory:${runId}` })
+    const artifactRoot = `/runs/${runId}/artifacts/code-mode`
+    const registry = new ToolUseRegistry()
+      .register(createSearchCodeRunTool({
+        search: {
+          provider: 'static-search',
+          search: async searchQuery => ({
+            provider: 'static-search',
+            query: searchQuery,
+            results: staticRestaurantSearchResults(searchQuery),
+          }),
+        },
+      }))
+    const supervisor = new AgentSupervisor({
+      agentId: 'code-mode-e2e',
+      workspace,
+      modelId: env.SANDBANK_DEEPSEEK_MODEL ?? env.DEEPSEEK_MODEL ?? 'deepseek-v4-pro',
+      id: () => runId,
+      now: () => new Date(),
+      checkpointBeforeRun: false,
+      policy: { allowedOps: ['tool.use'] },
+      toolUse: {
+        registry,
+        dynamicWorker: createCloudflareExecutionCapsule(loader, ctx),
+        policy: {
+          allowedTools: ['search.code.run'],
+          resources: [
+            { kind: 'dynamic_worker.execution', actions: ['execute'] },
+            { kind: 'runtime.javascript', actions: ['execute'] },
+            { kind: 'external.search', id: 'static-search', actions: ['query'] },
+            { kind: 'workspace.path', scope: artifactRoot, actions: ['write'] },
+          ],
+        },
+      },
+    })
+
+    let tool: SearchCodeRunToolOutput | undefined
+    await supervisor.run({
+      input: { message: 'run search code mode e2e', query },
+      modelLoop: async context => {
+        tool = await context.executeOp({
+          action: 'tool.use',
+          request: {
+            tool: 'search.code.run',
+            input: {
+              code: [
+                'const response = await ctx.search.search(ctx.input.queries[0]);',
+                'const ranked = response.results.map((item, index) => ({ rank: index + 1, title: item.title, url: item.url, area: item.area }));',
+                'await ctx.runtime.artifact("restaurants.json", { query: response.query, ranked }, { mediaType: "application/json" });',
+                'return { query: response.query, count: ranked.length, top: ranked[0]?.title ?? null };',
+              ].join('\n'),
+              queries: [query],
+              artifactRoot,
+              resultArtifactName: 'summary.json',
+            },
+          },
+        }) as SearchCodeRunToolOutput
+        return { text: 'code mode e2e complete' }
+      },
+    })
+
+    const artifacts = await readCodeModeArtifacts(workspace, tool?.artifacts ?? [])
+    return workerJson({
+      ok: true,
+      service: 'sandbank-code-mode-e2e',
+      runId,
+      workspaceId: workspace.id,
+      query,
+      tool,
+      artifacts,
+    })
+  } catch (err) {
+    return workerJson({
+      ok: false,
+      error: err instanceof Error ? err.message : 'code mode e2e failed',
+    }, 500)
+  }
+}
+
+function staticRestaurantSearchResults(query: string): Array<Record<string, string>> {
+  return [
+    { title: 'Lature', url: 'https://example.test/tokyo/lature', area: 'Shibuya', query },
+    { title: 'GINZA Le Signe', url: 'https://example.test/tokyo/le-signe', area: 'Ginza', query },
+    { title: 'GINZA L\'ARGENT', url: 'https://example.test/tokyo/largent', area: 'Ginza', query },
+  ]
+}
+
+async function readCodeModeArtifacts(
+  workspace: WorkspaceAdapter,
+  artifacts: SearchCodeRunToolOutput['artifacts'],
+): Promise<Record<string, unknown>> {
+  const out: Record<string, unknown> = {}
+  for (const artifact of artifacts) {
+    const data = await workspace.read(artifact.path)
+    const text = typeof data === 'string' ? data : new TextDecoder().decode(data)
+    out[artifact.name] = parseArtifactJson(text)
+  }
+  return out
+}
+
+function parseArtifactJson(text: string): unknown {
+  try {
+    return JSON.parse(text) as unknown
+  } catch {
+    return text
+  }
+}
+
+function workerJson(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Content-Type': 'application/json; charset=utf-8',
+    },
+  })
 }
