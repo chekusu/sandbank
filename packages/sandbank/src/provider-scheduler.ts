@@ -14,6 +14,7 @@ import {
   type SyncWorkspaceResult,
   type WorkspaceAdapter,
   type WorkspaceBridgeResult,
+  type WorkspaceCapabilities,
   type WorkspaceData,
   type WorkspaceEntry,
   type WorkspaceLock,
@@ -106,6 +107,7 @@ export interface WorkspaceSandboxSchedulerOptions {
   imageCatalog?: ProviderImageCatalog
   consistency?: WorkspaceSandboxConsistencyOptions
   destroySandbox?: boolean
+  preflight?: WorkspaceSandboxPreflightConfig | false
 }
 
 export interface SelectedSandboxProvider {
@@ -145,10 +147,57 @@ export interface WorkspaceSandboxTaskResult {
   materialized?: WorkspaceBridgeResult
   synced?: SyncWorkspaceResult
   merge?: WorkspaceMergeResult
+  preflight?: WorkspaceSandboxPreflightResult
   checkpoints: {
     before?: Checkpoint
     after?: Checkpoint
   }
+}
+
+export interface WorkspaceSandboxPreflightConfig {
+  /** Create a temporary sandbox and probe image-level tools such as python/codex/tmux/tar/gzip. */
+  runtime?: boolean
+  /** Additional image probes to run after Sandbank's default probes for the task. */
+  probes?: WorkspaceSandboxRuntimeProbe[]
+  /** Runtime probe timeout in milliseconds. Defaults to 10 seconds. */
+  probeTimeoutMs?: number
+  /** Destroy the temporary probe sandbox. Defaults to true. */
+  destroySandbox?: boolean
+}
+
+export interface WorkspaceSandboxPreflightOptions {
+  runId?: string
+  workspace: WorkspaceAdapter
+  providers: SandboxProviderCandidate[]
+  task: WorkspaceSandboxTask
+  imageCatalog?: ProviderImageCatalog
+  consistency?: WorkspaceSandboxConsistencyOptions
+  preflight?: WorkspaceSandboxPreflightConfig
+}
+
+export interface WorkspaceSandboxRuntimeProbe {
+  name: string
+  command: string
+  required?: boolean
+}
+
+export interface WorkspaceSandboxPreflightCheck {
+  kind: 'workspace' | 'provider' | 'runtime'
+  name: string
+  ok: boolean
+  required: boolean
+  detail?: string
+  command?: string
+}
+
+export interface WorkspaceSandboxPreflightResult {
+  ok: boolean
+  runId: string
+  providerName?: string
+  createConfig?: CreateConfig
+  selected?: SelectedSandboxProvider
+  checks: WorkspaceSandboxPreflightCheck[]
+  errors: string[]
 }
 
 interface FileSnapshot {
@@ -165,11 +214,15 @@ interface RunContext {
     & Pick<WorkspaceSandboxConsistencyOptions, 'conflictRoot'>
   selected: SelectedSandboxProvider
   destroySandbox: boolean
+  preflight?: WorkspaceSandboxPreflightResult
 }
+
+type WorkspaceCapabilityName = keyof WorkspaceCapabilities
 
 const textEncoder = new TextEncoder()
 const textDecoder = new TextDecoder('utf-8', { fatal: true })
 const DEFAULT_LOCK_TTL_MS = 30 * 60 * 1000
+const DEFAULT_PREFLIGHT_PROBE_TIMEOUT_MS = 10_000
 
 export function selectSandboxProvider(
   providers: SandboxProviderCandidate[],
@@ -210,7 +263,21 @@ export async function runWorkspaceSandboxTask(
   options: WorkspaceSandboxSchedulerOptions,
 ): Promise<WorkspaceSandboxTaskResult> {
   const runId = options.runId ?? createRunId()
-  const selected = selectSandboxProvider(options.providers, options.task, options.imageCatalog)
+  const preflight = options.preflight === false
+    ? undefined
+    : await preflightWorkspaceSandboxTask({
+      runId,
+      workspace: options.workspace,
+      providers: options.providers,
+      task: options.task,
+      imageCatalog: options.imageCatalog,
+      consistency: options.consistency,
+      preflight: options.preflight ?? { runtime: false },
+    })
+  if (preflight && !preflight.ok) {
+    throw new Error(`Sandbox preflight failed: ${preflight.errors.join('; ')}`)
+  }
+  const selected = preflight?.selected ?? selectSandboxProvider(options.providers, options.task, options.imageCatalog)
   const mount = normalizeMount(options.task.mount)
   const consistency = normalizeConsistency(options.consistency)
   const destroySandbox = options.destroySandbox ?? options.task.kind !== 'codex.goal'
@@ -222,6 +289,7 @@ export async function runWorkspaceSandboxTask(
     consistency,
     selected,
     destroySandbox,
+    preflight,
   }
 
   if (consistency.mode === 'exclusive-lock') {
@@ -229,6 +297,71 @@ export async function runWorkspaceSandboxTask(
   }
 
   return runSelectedTask(context)
+}
+
+export async function preflightWorkspaceSandboxTask(
+  options: WorkspaceSandboxPreflightOptions,
+): Promise<WorkspaceSandboxPreflightResult> {
+  const runId = options.runId ?? createRunId()
+  const mount = normalizeMount(options.task.mount)
+  const consistency = normalizeConsistency(options.consistency)
+  const checks: WorkspaceSandboxPreflightCheck[] = []
+  const errors: string[] = []
+
+  for (const capability of requiredWorkspaceCapabilitiesForTask(options.task, consistency)) {
+    const ok = Boolean(options.workspace.capabilities[capability])
+    checks.push({ kind: 'workspace', name: capability, ok, required: true })
+    if (!ok) errors.push(`Workspace capability "${capability}" is required for this sandbox task.`)
+  }
+
+  if (errors.length > 0) {
+    return { ok: false, runId, checks, errors }
+  }
+
+  let selected: SelectedSandboxProvider
+  try {
+    selected = selectSandboxProvider(options.providers, options.task, options.imageCatalog)
+    checks.push({
+      kind: 'provider',
+      name: 'required capabilities',
+      ok: true,
+      required: true,
+      detail: `${selected.provider.name}: ${requiredCapabilitiesForTask(options.task).join(', ')}`,
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Provider capability selection failed.'
+    checks.push({
+      kind: 'provider',
+      name: 'required capabilities',
+      ok: false,
+      required: true,
+      detail: message,
+    })
+    errors.push(message)
+    return { ok: false, runId, checks, errors }
+  }
+
+  const preflight = options.preflight ?? { runtime: false }
+  if (preflight.runtime) {
+    await preflightSandboxRuntime({
+      selected,
+      task: options.task,
+      mount,
+      config: preflight,
+      checks,
+      errors,
+    })
+  }
+
+  return {
+    ok: errors.length === 0,
+    runId,
+    providerName: selected.provider.name,
+    createConfig: selected.createConfig,
+    selected,
+    checks,
+    errors,
+  }
 }
 
 async function runSelectedTask(context: RunContext): Promise<WorkspaceSandboxTaskResult> {
@@ -268,6 +401,7 @@ async function runSelectedTask(context: RunContext): Promise<WorkspaceSandboxTas
         exec: execution.exec,
         codex: execution.codex,
         materialized,
+        preflight: context.preflight,
         checkpoints,
       }
     }
@@ -284,6 +418,7 @@ async function runSelectedTask(context: RunContext): Promise<WorkspaceSandboxTas
         exec: execution.exec,
         codex: execution.codex,
         materialized,
+        preflight: context.preflight,
         checkpoints,
       }
     }
@@ -320,6 +455,7 @@ async function runSelectedTask(context: RunContext): Promise<WorkspaceSandboxTas
         codex: execution.codex,
         materialized,
         merge,
+        preflight: context.preflight,
         checkpoints,
       }
     }
@@ -341,6 +477,7 @@ async function runSelectedTask(context: RunContext): Promise<WorkspaceSandboxTas
       codex: execution.codex,
       materialized,
       synced,
+      preflight: context.preflight,
       checkpoints,
     }
   } finally {
@@ -573,6 +710,105 @@ async function withWorkspaceLock<T>(
   } finally {
     await lock?.release().catch(() => undefined)
   }
+}
+
+async function preflightSandboxRuntime(options: {
+  selected: SelectedSandboxProvider
+  task: WorkspaceSandboxTask
+  mount: Required<WorkspaceSandboxMountOptions>
+  config: WorkspaceSandboxPreflightConfig
+  checks: WorkspaceSandboxPreflightCheck[]
+  errors: string[]
+}): Promise<void> {
+  let sandbox: Sandbox | undefined
+  try {
+    sandbox = await options.selected.provider.create(options.selected.createConfig)
+    const probes = [
+      ...defaultRuntimeProbesForTask(options.task, options.mount),
+      ...(options.config.probes ?? []),
+    ]
+    for (const probe of probes) {
+      const required = probe.required ?? true
+      const result = await sandbox.exec(probe.command, {
+        timeout: options.config.probeTimeoutMs ?? DEFAULT_PREFLIGHT_PROBE_TIMEOUT_MS,
+      })
+      const ok = result.exitCode === 0
+      const detail = ok
+        ? result.stdout.trim()
+        : (result.stderr || result.stdout || `exit ${result.exitCode}`).trim()
+      options.checks.push({
+        kind: 'runtime',
+        name: probe.name,
+        ok,
+        required,
+        command: probe.command,
+        detail,
+      })
+      if (!ok && required) {
+        options.errors.push(`Runtime probe "${probe.name}" failed on provider "${options.selected.provider.name}": ${detail}`)
+      }
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Runtime preflight failed.'
+    options.checks.push({
+      kind: 'runtime',
+      name: 'sandbox.create',
+      ok: false,
+      required: true,
+      detail: message,
+    })
+    options.errors.push(`Runtime preflight failed on provider "${options.selected.provider.name}": ${message}`)
+  } finally {
+    if (sandbox && options.config.destroySandbox !== false) {
+      await options.selected.provider.destroy(sandbox.id).catch(() => undefined)
+    }
+  }
+}
+
+function defaultRuntimeProbesForTask(
+  task: WorkspaceSandboxTask,
+  mount: Required<WorkspaceSandboxMountOptions>,
+): WorkspaceSandboxRuntimeProbe[] {
+  const probes: WorkspaceSandboxRuntimeProbe[] = []
+  if (task.kind === 'python') {
+    probes.push({ name: 'python', command: `command -v ${shellQuote(task.python ?? 'python')}` })
+  }
+  if (task.kind === 'codex.exec' || task.kind === 'codex.goal') {
+    probes.push({ name: 'codex', command: `command -v ${shellQuote(task.codex ?? 'codex')}` })
+    probes.push({ name: 'git', command: 'command -v git' })
+  }
+  if (task.kind === 'codex.goal') {
+    probes.push({ name: 'tmux', command: 'command -v tmux' })
+    probes.push({ name: 'bash', command: 'command -v bash' })
+    probes.push({ name: 'gh', command: 'command -v gh' })
+  }
+  if (mount.mode === 'snapshot') {
+    probes.push({ name: 'tar', command: 'command -v tar' })
+    probes.push({ name: 'gzip', command: 'command -v gzip' })
+  }
+  if (mount.mode === 'live') {
+    probes.push({ name: 'sandbank', command: 'command -v sandbank' })
+  }
+  return probes
+}
+
+function requiredWorkspaceCapabilitiesForTask(
+  task: WorkspaceSandboxTask,
+  consistency: Required<Omit<WorkspaceSandboxConsistencyOptions, 'conflictRoot'>>
+    & Pick<WorkspaceSandboxConsistencyOptions, 'conflictRoot'>,
+): WorkspaceCapabilityName[] {
+  const required = new Set<WorkspaceCapabilityName>(['list', 'read', 'write'])
+  if (consistency.mode !== 'none') required.add('checkpoint')
+  if (consistency.mode === 'exclusive-lock' || consistency.mode === 'branch-merge') {
+    required.add('lock')
+  }
+  if (consistency.mode === 'branch-merge' || consistency.deleteMissing) {
+    required.add('remove')
+  }
+  if (task.mount?.mode === 'live') {
+    required.add('watch')
+  }
+  return [...required]
 }
 
 function requiredCapabilitiesForTask(task: WorkspaceSandboxTask): SandboxSchedulerCapability[] {

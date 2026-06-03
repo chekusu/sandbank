@@ -16,6 +16,18 @@ The scheduler added in `packages/sandbank/src/provider-scheduler.ts` uses this f
 
 This means a Dynamic Worker can generate Python into `/workspace/generated/task.py`, while the scheduler can dispatch that Python file to an E2B, Daytona, BoxLite, or other provider candidate that declares `runtime.python`.
 
+## Preflight
+
+`preflightWorkspaceSandboxTask()` checks whether the configured workspace and providers can support a task before the agent allocates its real execution sandbox.
+
+The static preflight checks:
+
+- workspace capabilities such as `checkpoint`, `lock`, `list`, `read`, `write`, and `remove`
+- provider scheduler capabilities such as `runtime.python`, `runtime.codex`, `codex.exec`, `codex.goal`, `workspace.snapshot`, and `workspace.live`
+- logical image resolution through the provider image catalog
+
+`runWorkspaceSandboxTask()` runs this static preflight by default. Passing `preflight: { runtime: true }` creates a temporary sandbox and probes image-level tools before materializing the workspace. Python tasks probe `python`, `tar`, and `gzip`. Codex goal tasks probe `codex`, `git`, `tmux`, `bash`, `gh`, `tar`, and `gzip`.
+
 ## Consistency Modes
 
 `exclusive-lock` is the default mode. It locks the workspace path for the whole sandbox run when the workspace backend supports locks. This serializes concurrent provider writes to the same path.

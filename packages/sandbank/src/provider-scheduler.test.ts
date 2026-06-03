@@ -14,6 +14,7 @@ import {
   type WorkspaceData,
 } from '@sandbank.dev/workspace'
 import {
+  preflightWorkspaceSandboxTask,
   runWorkspaceSandboxTask,
   type SandboxSchedulerCapability,
 } from './provider-scheduler.js'
@@ -91,6 +92,107 @@ class FakeProvider implements SandboxProvider {
 }
 
 describe('provider scheduler', () => {
+  it('preflights workspace, provider, and Python image runtime before running an agent task', async () => {
+    const workspace = new MemoryWorkspaceAdapter(undefined, { id: 'workspace-preflight-python' })
+    const sandbox = new FakeSandbox('preflight-python-sandbox')
+    const provider = new FakeProvider('e2b', sandbox)
+    sandbox.onExec = async command => ({
+      stdout: `/usr/bin/${command.split(' ').at(-1) ?? 'tool'}\n`,
+      stderr: '',
+      exitCode: 0,
+    })
+
+    const result = await preflightWorkspaceSandboxTask({
+      runId: 'run_preflight_python',
+      workspace,
+      providers: [candidate(provider, ['runtime.python'])],
+      imageCatalog: {
+        'python-agent': {
+          providers: {
+            e2b: 'e2b-python-template',
+          },
+        },
+      },
+      task: {
+        kind: 'python',
+        path: '/workspace/generated/task.py',
+        image: 'python-agent',
+      },
+      preflight: { runtime: true },
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.providerName).toBe('e2b')
+    expect(result.createConfig).toEqual({ image: 'e2b-python-template' })
+    expect(provider.createConfigs).toEqual([{ image: 'e2b-python-template' }])
+    expect(provider.destroyed).toEqual(['preflight-python-sandbox'])
+    expect(sandbox.commands).toEqual([
+      'command -v python',
+      'command -v tar',
+      'command -v gzip',
+    ])
+    expect(result.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'workspace', name: 'checkpoint', ok: true, required: true }),
+      expect.objectContaining({ kind: 'workspace', name: 'lock', ok: true, required: true }),
+      expect.objectContaining({ kind: 'provider', name: 'required capabilities', ok: true, required: true }),
+      expect.objectContaining({ kind: 'runtime', name: 'python', ok: true, required: true }),
+    ]))
+  })
+
+  it('preflight rejects missing workspace consistency capabilities before allocating a provider', async () => {
+    const workspace = workspaceWithCapabilities({ lock: false })
+    const provider = new FakeProvider('daytona', new FakeSandbox('unused-sandbox'))
+
+    const result = await preflightWorkspaceSandboxTask({
+      runId: 'run_preflight_workspace',
+      workspace,
+      providers: [candidate(provider, ['runtime.python'])],
+      task: {
+        kind: 'python',
+        path: '/workspace/generated/task.py',
+        image: 'python-agent',
+      },
+      preflight: { runtime: true },
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.errors).toContain('Workspace capability "lock" is required for this sandbox task.')
+    expect(result.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'workspace', name: 'lock', ok: false, required: true }),
+    ]))
+    expect(provider.createConfigs).toEqual([])
+  })
+
+  it('can enforce runtime preflight during task execution and fail before workspace materialization', async () => {
+    const workspace = new MemoryWorkspaceAdapter(undefined, { id: 'workspace-runtime-fail' })
+    await workspace.write('/workspace/generated/task.py', 'print("should not run")')
+    const sandbox = new FakeSandbox('runtime-fail-sandbox')
+    const provider = new FakeProvider('e2b', sandbox)
+    sandbox.onExec = async command => command === 'command -v python'
+      ? { stdout: '', stderr: 'python: not found', exitCode: 127 }
+      : { stdout: '', stderr: '', exitCode: 0 }
+
+    await expect(runWorkspaceSandboxTask({
+      runId: 'run_runtime_fail',
+      workspace,
+      providers: [candidate(provider, ['runtime.python'])],
+      task: {
+        kind: 'python',
+        path: '/workspace/generated/task.py',
+        image: 'python-agent',
+      },
+      preflight: { runtime: true },
+    })).rejects.toThrow('Sandbox preflight failed')
+
+    expect(provider.destroyed).toEqual(['runtime-fail-sandbox'])
+    expect(sandbox.uploadDest).toBeUndefined()
+    expect(sandbox.commands).toEqual([
+      'command -v python',
+      'command -v tar',
+      'command -v gzip',
+    ])
+  })
+
   it('dispatches Dynamic Worker generated Python files to a provider with the python runtime', async () => {
     const workspace = new MemoryWorkspaceAdapter(undefined, { id: 'workspace-python' })
     await workspace.write('/workspace/generated/task.py', 'open("output.txt", "w").write("ok")')
@@ -258,6 +360,14 @@ describe('provider scheduler', () => {
 
 function candidate(provider: SandboxProvider, capabilities: SandboxSchedulerCapability[]) {
   return { provider, capabilities }
+}
+
+function workspaceWithCapabilities(overrides: Partial<MemoryWorkspaceAdapter['capabilities']>): MemoryWorkspaceAdapter {
+  const workspace = new MemoryWorkspaceAdapter(undefined, { id: 'workspace-overrides' })
+  Object.defineProperty(workspace, 'capabilities', {
+    value: { ...workspace.capabilities, ...overrides },
+  })
+  return workspace
 }
 
 async function archiveFromFiles(files: Record<string, WorkspaceData>): Promise<Uint8Array> {
