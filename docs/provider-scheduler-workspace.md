@@ -2,6 +2,8 @@
 
 Sandbank treats `WorkspaceAdapter` as the durable source of truth for agent state. Sandbox providers are execution capsules. A provider may have a VM, container, Dynamic Worker, snapshot, volume, or terminal, but those resources are not the canonical state boundary.
 
+For model, Workspace, provider, and image/runtime setup, see [Sandbank Agent Configuration](./sandbank-agent-configuration.md).
+
 ## Execution Model
 
 The scheduler added in `packages/sandbank/src/provider-scheduler.ts` uses this flow:
