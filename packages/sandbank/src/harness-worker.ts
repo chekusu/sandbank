@@ -51,12 +51,21 @@ type CapsuleBindingProps = {
 type CapsuleBindingEntry = {
   workspace: WorkspaceAdapter
   workspaceScope: CapsuleWorkspaceScope
+  search?: SearchCodeBinding
   tools?: HarnessToolUseBinding
   events: HarnessExecutionEvent[]
 }
 
 type CloudflareExecutionContextWithExports = ExecutionContext & {
   exports?: Record<string, (options?: { props?: CapsuleBindingProps }) => unknown>
+}
+
+type SearchCodeBinding = {
+  provider?: unknown
+  allowedHosts?: string[]
+  search(query: string): Promise<unknown>
+  fetchJson(url: string, init?: RequestInit): Promise<unknown>
+  fetchText(url: string, init?: RequestInit): Promise<string>
 }
 
 const bindingRegistry = new Map<string, CapsuleBindingEntry>()
@@ -128,6 +137,34 @@ export class SandbankRuntimeBinding extends WorkerEntrypoint<DbNativeAgentHarnes
   }
 }
 
+export class SandbankSearchBinding extends WorkerEntrypoint<DbNativeAgentHarnessWorkerEnv, CapsuleBindingProps> {
+  private binding(): SearchCodeBinding {
+    const entry = bindingEntry(this.ctx.props.invocationId)
+    if (!entry.search) throw new Error('Dynamic Worker search binding is not configured for this invocation')
+    return entry.search
+  }
+
+  async info(): Promise<{ provider?: unknown; allowedHosts: string[] }> {
+    const binding = this.binding()
+    return {
+      provider: binding.provider,
+      allowedHosts: binding.allowedHosts ?? [],
+    }
+  }
+
+  async search(query: string): Promise<unknown> {
+    return this.binding().search(query)
+  }
+
+  async fetchJson(url: string, init?: RequestInit): Promise<unknown> {
+    return this.binding().fetchJson(url, init)
+  }
+
+  async fetchText(url: string, init?: RequestInit): Promise<string> {
+    return this.binding().fetchText(url, init)
+  }
+}
+
 export class SandbankToolUseBinding extends WorkerEntrypoint<DbNativeAgentHarnessWorkerEnv, CapsuleBindingProps> {
   async list(): Promise<Array<{ name: string; description?: string }>> {
     const entry = bindingEntry(this.ctx.props.invocationId)
@@ -148,6 +185,7 @@ function createCloudflareExecutionCapsule(
   const loopback = (ctx as CloudflareExecutionContextWithExports).exports
   const createWorkspaceBinding = loopback?.SandbankWorkspaceBinding
   const createRuntimeBinding = loopback?.SandbankRuntimeBinding
+  const createSearchBinding = loopback?.SandbankSearchBinding
   const createToolUseBinding = loopback?.SandbankToolUseBinding
   if (!createWorkspaceBinding || !createRuntimeBinding) {
     return {
@@ -172,9 +210,11 @@ function createCloudflareExecutionCapsule(
     async invoke(options) {
       const invocationId = `dw_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`
       const events: HarnessExecutionEvent[] = []
+      const searchBinding = getSearchCodeBinding(options.bindings?.['SANDBANK_SEARCH'])
       bindingRegistry.set(invocationId, {
         workspace: options.workspace,
         workspaceScope: options.workspaceScope,
+        search: searchBinding,
         tools: options.tools,
         events,
       })
@@ -194,6 +234,9 @@ function createCloudflareExecutionCapsule(
             ...(options.bindings ?? {}),
             SANDBANK_WORKSPACE: createWorkspaceBinding({ props: { invocationId } }),
             SANDBANK_RUNTIME: createRuntimeBinding({ props: { invocationId } }),
+            ...(searchBinding && createSearchBinding
+              ? { SANDBANK_SEARCH: createSearchBinding({ props: { invocationId } }) }
+              : {}),
             ...(toolBinding ? { SANDBANK_TOOLS: toolBinding } : {}),
           },
           bindingAllowlist,
@@ -214,6 +257,19 @@ function createCloudflareExecutionCapsule(
       }
     },
   }
+}
+
+function getSearchCodeBinding(value: unknown): SearchCodeBinding | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const candidate = value as Partial<SearchCodeBinding>
+  if (
+    typeof candidate.search !== 'function'
+    || typeof candidate.fetchJson !== 'function'
+    || typeof candidate.fetchText !== 'function'
+  ) {
+    return undefined
+  }
+  return candidate as SearchCodeBinding
 }
 
 function dynamicWorkerBindingAllowlist(includeTools: boolean, extra: string[] = []): string[] {

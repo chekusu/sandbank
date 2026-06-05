@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { MemoryWorkspaceAdapter } from '@sandbank.dev/workspace'
 import harnessWorker, {
   SandbankRuntimeBinding,
+  SandbankSearchBinding,
   SandbankWorkspaceBinding,
 } from '../src/harness-worker.js'
 import type { DynamicWorkerCode, DynamicWorkerLoader } from '@sandbank.dev/cloudflare/dynamic-worker-capsule'
@@ -18,6 +19,11 @@ function createExecutionContext(env: Record<string, unknown>) {
         props,
       }, env),
       SandbankRuntimeBinding: ({ props }: { props: { invocationId: string } }) => new SandbankRuntimeBinding({
+        waitUntil() {},
+        passThroughOnException() {},
+        props,
+      }, env),
+      SandbankSearchBinding: ({ props }: { props: { invocationId: string } }) => new SandbankSearchBinding({
         waitUntil() {},
         passThroughOnException() {},
         props,
