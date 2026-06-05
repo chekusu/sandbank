@@ -1,7 +1,7 @@
 {
   "name": "sandbank",
   "version": "0.5.4",
-  "description": "Unified sandbox SDK and CLI for AI agents — write once, run on any cloud",
+  "description": "Workspace Agent Harness and sandbox orchestration CLI for AI agents",
   "license": "MIT",
   "type": "module",
   "repository": {
@@ -12,6 +12,8 @@
   "homepage": "https://sandbank.dev",
   "keywords": [
     "sandbox",
+    "workspace",
+    "harness",
     "ai-agent",
     "ai",
     "agent",

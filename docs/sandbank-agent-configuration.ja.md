@@ -2,10 +2,13 @@
 
 [English](./sandbank-agent-configuration.md) | [中文](./sandbank-agent-configuration.zh-CN.md) | [日本語](./sandbank-agent-configuration.ja.md)
 
-このガイドは、開発者が Sandbank Agent を実行する前に必要な設定をまとめたものです。Sandbank には関連する実行レイヤーが二つあります。
+このガイドは、開発者が Sandbank Agent を実行する前に必要な設定をまとめたものです。Sandbank は workspace-native agent harness です。Agent の長期状態は `WorkspaceAdapter` に置き、具体的な計算タスクはその時点で最適な実行 backend に派遣します。低レベルの sandbox SDK は引き続きスタックの一部ですが、プロダクトレベルの契約は Workspace 状態を provider 間で持ち運べる harness です。
 
-- DB-native agent harness（`sandbank harness-api`）：モデルを呼び出し、実行状態を Workspace に永続化し、制限付き Dynamic Worker capsule を呼び出せます。
-- provider scheduler（`runWorkspaceSandboxTask`）：生成された Python や Codex 実行などの具体的な計算タスクを、設定済み sandbox provider に派遣します。
+主な実行ロールは次のとおりです。
+
+- DB-native agent harness（`sandbank harness-api`）：モデルを呼び出し、run state、memory、artifact、audit data を Workspace に永続化し、制限付き Dynamic Worker capsule を呼び出せます。
+- Tool Use と code mode：policy checked binding を通じて、host が登録した能力を Agent に公開します。
+- provider scheduler（`runWorkspaceSandboxTask`）：生成された Python や Codex 実行などの具体的な計算タスクを、設定済み sandbox provider に派遣し、出力を同じ Workspace に同期します。
 
 ## 必須設定
 
@@ -16,7 +19,7 @@
 | Provider | Dynamic Worker 以外の sandbox 計算タスク | タスクに合う capability を持つ `SandboxProviderCandidate` が少なくとも一つ |
 | イメージ/runtime | provider に派遣するタスク | 必要なツールを含む論理イメージマッピング、または直接指定するイメージ |
 
-Agent がモデル、Workspace、Dynamic Worker binding だけを使う基本的な DB-native harness では、sandbox provider の設定は不要です。Python、Codex、その他のコマンドを provider 内で実行する場合に provider 設定が必要になります。
+Agent がモデル、Workspace、Tool Use handler、Dynamic Worker binding だけを使う基本的な DB-native harness では、sandbox provider の設定は不要です。Python、Codex、その他のコマンドを provider 内で実行する場合に provider 設定が必要になります。どちらの場合も Workspace が正準状態であり、provider local file や volume は Workspace に同期されない限り一時的な実行状態です。
 
 ## モデル設定
 
@@ -37,7 +40,7 @@ harness は現在 DeepSeek-compatible chat completions API を使用します。
 
 ## Workspace 設定
 
-Workspace は永続状態の境界です。run input/output、audit log、checkpoint、artifact、Agent 状態を保存します。provider ローカルファイルや provider volume は、provider をまたぐ正準状態ではありません。
+Workspace は永続状態の境界です。run input/output、audit log、checkpoint、artifact、memory、Agent 状態を保存します。provider ローカルファイルや provider volume は、provider をまたぐ正準状態ではありません。harness は必要に応じて Workspace を sandbox に materialize し、結果を sync または merge して戻すため、後続タスクは別 backend に切り替えて続行できます。
 
 | 設定 | 必須 | 説明 |
 |------|:----:|------|
@@ -89,7 +92,7 @@ Tool 登録は host application が制御します。任意の end user が runt
 
 ## Provider Scheduler 設定
 
-タスクに sandbox provider が必要な場合は provider scheduler を使います。必須入力は次のとおりです。
+タスクに sandbox provider が必要な場合は provider scheduler を使います。scheduler は永続 Workspace と交換可能な実行 backend をつなぐ役割です。必須入力は次のとおりです。
 
 - `workspace`：`WorkspaceAdapter`
 - `providers`：一つ以上の `SandboxProviderCandidate`

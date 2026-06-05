@@ -1,12 +1,12 @@
 # Provider Scheduler And Workspace Consistency
 
-Sandbank treats `WorkspaceAdapter` as the durable source of truth for agent state. Sandbox providers are execution capsules. A provider may have a VM, container, Dynamic Worker, snapshot, volume, or terminal, but those resources are not the canonical state boundary.
+Sandbank is a workspace-native agent harness, not only a sandbox SDK. It treats `WorkspaceAdapter` as the durable source of truth for agent state, then uses sandbox providers as interchangeable execution backends. A provider may have a VM, container, Dynamic Worker, snapshot, volume, or terminal, but those resources are execution capsules rather than the canonical state boundary.
 
 For model, Workspace, provider, and image/runtime setup, see [Sandbank Agent Configuration](./sandbank-agent-configuration.md).
 
 ## Execution Model
 
-The scheduler added in `packages/sandbank/src/provider-scheduler.ts` uses this flow:
+The scheduler added in `packages/sandbank/src/provider-scheduler.ts` is the mechanism that lets one agent task move across backend sandboxes while staying anchored to the same Workspace. It uses this flow:
 
 1. Take a workspace checkpoint when the backend supports checkpoints.
 2. Select a provider whose declared scheduler capabilities satisfy the task.
@@ -16,7 +16,7 @@ The scheduler added in `packages/sandbank/src/provider-scheduler.ts` uses this f
 6. Sync or merge sandbox output back into the workspace.
 7. Create an after-run checkpoint when supported.
 
-This means a Dynamic Worker can generate Python into `/workspace/generated/task.py`, while the scheduler can dispatch that Python file to an E2B, Daytona, BoxLite, or other provider candidate that declares `runtime.python`.
+This means a Dynamic Worker can generate Python into `/workspace/generated/task.py`, while the scheduler can dispatch that Python file to an E2B, Daytona, BoxLite, or other provider candidate that declares `runtime.python`. The next task can choose a different backend and still see the same canonical Workspace after sync or merge.
 
 ## Preflight
 

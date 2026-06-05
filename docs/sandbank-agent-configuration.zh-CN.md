@@ -2,10 +2,13 @@
 
 [English](./sandbank-agent-configuration.md) | [中文](./sandbank-agent-configuration.zh-CN.md) | [日本語](./sandbank-agent-configuration.ja.md)
 
-本文说明开发者在运行 Sandbank Agent 前需要配置什么。Sandbank 里有两层相关执行路径：
+本文说明开发者在运行 Sandbank Agent 前需要配置什么。Sandbank 是 workspace-native agent harness：Agent 的长期状态保存在 `WorkspaceAdapter` 里，具体计算任务再派发到最合适的执行后端。底层沙箱 SDK 仍然是系统的一部分，但产品层契约是一个能让 Workspace 状态跨 provider 保持连续的 harness。
 
-- DB-native agent harness（`sandbank harness-api`）：调用模型、把运行状态持久化到 Workspace，并可调用受限的 Dynamic Worker capsule。
-- provider 调度器（`runWorkspaceSandboxTask`）：把具体计算任务，例如生成的 Python 或 Codex 任务，派发到已配置的 sandbox provider。
+主要执行角色包括：
+
+- DB-native agent harness（`sandbank harness-api`）：调用模型，把 run state、memory、artifact、audit data 持久化到 Workspace，并可调用受限的 Dynamic Worker capsule。
+- Tool Use 与 code mode：通过经过 policy 校验的 binding，把宿主注册的能力暴露给 Agent。
+- provider 调度器（`runWorkspaceSandboxTask`）：把具体计算任务，例如生成的 Python 或 Codex 任务，派发到已配置的 sandbox provider，并把输出同步回同一个 Workspace。
 
 ## 必须配置
 
@@ -16,7 +19,7 @@
 | Provider | Dynamic Worker 以外的 sandbox 计算任务 | 至少一个能力匹配任务的 `SandboxProviderCandidate` |
 | 镜像/runtime | provider 派发任务 | 包含所需工具链的逻辑镜像映射或直接镜像 |
 
-如果 DB-native harness 只使用模型、Workspace 和 Dynamic Worker binding，则不需要配置 sandbox provider。只有当 Agent 需要在 provider 中运行 Python、Codex 或其他命令时，provider 配置才是必须的。
+如果 DB-native harness 只使用模型、Workspace、Tool Use handler 和 Dynamic Worker binding，则不需要配置 sandbox provider。只有当 Agent 需要在 provider 中运行 Python、Codex 或其他命令时，provider 配置才是必须的。无论哪种路径，Workspace 都是权威状态；provider 本地文件和 volume 只是临时执行状态，除非被同步回 Workspace。
 
 ## 模型配置
 
@@ -37,7 +40,7 @@ harness 当前使用 DeepSeek-compatible chat completions API。
 
 ## Workspace 配置
 
-Workspace 是持久状态边界。它存储 run input/output、audit log、checkpoint、artifact 和 Agent 状态。provider 本地文件和 provider volume 不是跨 provider 的权威状态。
+Workspace 是持久状态边界。它存储 run input/output、audit log、checkpoint、artifact、memory 和 Agent 状态。provider 本地文件和 provider volume 不是跨 provider 的权威状态。harness 会在需要时把 Workspace materialize 到沙箱，再把结果 sync 或 merge 回来，使后续任务可以切换到另一个后端继续执行。
 
 | 配置 | 必须 | 说明 |
 |------|:----:|------|
@@ -89,7 +92,7 @@ Tool 注册由宿主应用控制，不由任意终端用户动态注册。第三
 
 ## Provider 调度器配置
 
-当任务需要 sandbox provider 时使用 provider 调度。必须输入：
+当任务需要 sandbox provider 时使用 provider 调度。调度器连接持久 Workspace 与可替换执行后端。必须输入：
 
 - `workspace`：一个 `WorkspaceAdapter`
 - `providers`：一个或多个 `SandboxProviderCandidate`

@@ -1,6 +1,8 @@
 # @sandbank.dev/core
 
-> Unified sandbox SDK for AI agents — provider abstraction, capability system, and error types.
+> Low-level sandbox provider SDK for AI agents — provider abstraction, capability system, and error types.
+
+`@sandbank.dev/core` is the provider SDK layer inside Sandbank. The top-level `sandbank` package builds the Workspace Agent Harness on top of this package by adding durable Workspace state, Tool Use, memory, and cross-provider task scheduling.
 
 ## Install
 

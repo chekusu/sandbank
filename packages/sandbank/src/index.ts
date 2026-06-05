@@ -1,7 +1,9 @@
 /**
- * sandbank — Unified sandbox SDK for AI agents
+ * sandbank — Workspace Agent Harness for AI agents
  *
- * This package re-exports everything from @sandbank.dev/core.
+ * This package re-exports the low-level sandbox provider SDK from
+ * @sandbank.dev/core and adds the workspace-native agent harness,
+ * Tool Use, memory, and provider scheduler layers.
  * For provider adapters, install them separately:
  *
  *   pnpm add sandbank @sandbank.dev/daytona

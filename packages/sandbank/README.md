@@ -1,16 +1,18 @@
 # Sandbank
 
-> Unified sandbox SDK for AI agents — write once, run on any cloud.
+> Unified Workspace Agent Harness for AI agents — one durable workspace, many execution backends.
 
 **[Website](https://sandbank.dev)** | **[中文文档](../../README.md)** | **[English](../../README.en.md)** | **[日本語ドキュメント](../../README.ja.md)**
 
 <img src="../../docs/assets/sandbank-robots-vacation-pixel.png" alt="Pixel art robot agents vacationing on an ocean sandbank, each with a different developer role" width="100%" />
 
-Sandbank provides a single TypeScript interface for creating, managing, and orchestrating cloud sandboxes. Switch between providers without changing your application code.
+Sandbank is a workspace-native agent harness. It keeps agent identity, memory, artifacts, audit logs, files, and checkpoints in the `Workspace` protocol, then dispatches concrete execution tasks to Dynamic Workers, E2B, BoxLite, Fly.io, Daytona, Cloudflare Workers, or any compatible sandbox backend. The lower-level provider SDK is still available, but the top-level Sandbank abstraction is the harness that keeps workspace state portable across execution backends.
 
 ## Why Sandbank?
 
-AI agents need isolated execution environments. But every cloud provider has a different API — Daytona, Fly.io, Cloudflare Workers all speak different languages. Sandbank unifies them behind one interface:
+AI agents need more than an isolated sandbox. They need a durable, auditable workspace that can survive model turns, tool calls, provider switches, and retries. Sandbank treats sandboxes as execution capsules: short JavaScript code can run in a Cloudflare Dynamic Worker, generated Python can run in E2B or BoxLite, long-running work can land in a VM or container, and every output syncs back into the same workspace.
+
+The lower-level provider SDK still gives a common interface over Daytona, Fly.io, Cloudflare Workers, and other providers:
 
 ```typescript
 import { createProvider } from '@sandbank.dev/core'
@@ -25,17 +27,20 @@ console.log(result.stdout) // Hello from the sandbox
 await provider.destroy(sandbox.id)
 ```
 
-Swap `DaytonaAdapter` for `FlyioAdapter` or `CloudflareAdapter` — zero code changes.
+Swap `DaytonaAdapter` for `FlyioAdapter` or `CloudflareAdapter` without rewriting sandbox create/exec code. The harness layer builds on this and treats each provider as a compute backend, not the durable home of the agent.
 
 ## Architecture
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│  Your Application / AI Agent                         │
+│  Your Application / AI Agent / Third-party caller    │
 ├──────────────────────────────────────────────────────┤
-│  sandbank                   Agent Supervisor / Scheduler │
-│  @sandbank.dev/core         Unified Provider Interface   │
+│  sandbank                   Workspace Agent Harness      │
+│  AgentSupervisor            policy / memory / tool use   │
+│  Provider Scheduler         backend dispatch + sync      │
 │  @sandbank.dev/workspace    Durable Workspace & Checkpoints │
+├──────────────────────────────────────────────────────┤
+│  @sandbank.dev/core         Low-level Provider SDK       │
 │  @sandbank.dev/skills       Skill Registry & Injection   │
 │  @sandbank.dev/agent        In-sandbox Agent Client      │
 │  @sandbank.dev/relay        Multi-agent Communication    │
@@ -56,7 +61,8 @@ Swap `DaytonaAdapter` for `FlyioAdapter` or `CloudflareAdapter` — zero code ch
 
 | Package | Description |
 |---------|-------------|
-| [`@sandbank.dev/core`](../core) | Provider abstraction, capability system, error types |
+| [`sandbank`](.) | Workspace Agent Harness, Agent Supervisor, Tool Use, provider scheduler, CLI/Worker entrypoints |
+| [`@sandbank.dev/core`](../core) | Low-level provider SDK, capability system, error types |
 | [`@sandbank.dev/skills`](../skills) | Skill registry and local filesystem loader |
 | [`@sandbank.dev/workspace`](../workspace) | Durable workspace protocol, checkpoints, and sandbox materialization helpers |
 | [`@sandbank.dev/daytona`](../daytona) | Daytona cloud sandbox adapter |
@@ -160,6 +166,12 @@ session.on('message', async (msg) => {
 
 await session.complete({ status: 'success', summary: 'Built 5 API endpoints' })
 ```
+
+## Workspace Agent Harness
+
+The harness makes `WorkspaceAdapter` the authoritative state boundary for an agent. A single run can call a model, execute bounded JavaScript code mode in a Dynamic Worker, write generated Python into the workspace, dispatch that Python to E2B, BoxLite, Daytona, Fly.io, or another `runtime.python` backend, and then persist artifacts, logs, memory, and checkpoints back to the same workspace.
+
+This keeps long-lived agent state out of provider-local VMs, containers, volumes, and storage bindings. Permission checks also stay centralized: Tool Use requests pass through agent policy, resource grants, and approval rules before they call a host-registered tool or schedule a sandbox provider.
 
 ## Provider-Neutral Workspaces
 

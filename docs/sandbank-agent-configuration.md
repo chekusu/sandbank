@@ -2,10 +2,13 @@
 
 [English](./sandbank-agent-configuration.md) | [中文](./sandbank-agent-configuration.zh-CN.md) | [日本語](./sandbank-agent-configuration.ja.md)
 
-This guide covers the configuration developers need before running a Sandbank Agent. Sandbank has two related execution layers:
+This guide covers the configuration developers need before running a Sandbank Agent. Sandbank is a workspace-native agent harness: the durable agent state lives in a `WorkspaceAdapter`, while concrete work is dispatched to the best available execution backend for that task. The lower-level sandbox SDK remains part of the stack, but the product-level contract is the harness that keeps workspace state portable across providers.
 
-- The DB-native agent harness (`sandbank harness-api`) calls a model, persists run state in a Workspace, and can invoke bounded Dynamic Worker capsules.
-- The provider scheduler (`runWorkspaceSandboxTask`) dispatches concrete compute tasks, such as generated Python or Codex runs, into configured sandbox providers.
+The main execution roles are:
+
+- The DB-native agent harness (`sandbank harness-api`) calls a model, persists run state, memory, artifacts, and audit data in a Workspace, and can invoke bounded Dynamic Worker capsules.
+- Tool Use and code mode expose host-registered capabilities to the agent through policy-checked bindings.
+- The provider scheduler (`runWorkspaceSandboxTask`) dispatches concrete compute tasks, such as generated Python or Codex runs, into configured sandbox providers and syncs their outputs back into the same Workspace.
 
 ## Required Configuration
 
@@ -16,7 +19,7 @@ This guide covers the configuration developers need before running a Sandbank Ag
 | Provider | Sandbox compute tasks outside Dynamic Worker | At least one configured `SandboxProviderCandidate` whose capabilities match the task |
 | Image/runtime | Provider-dispatched tasks | A logical image mapping or direct image that contains the required tools |
 
-Provider configuration is not required for the basic DB-native harness if the agent only uses the model, Workspace, and Dynamic Worker bindings. It is required when the agent needs to execute Python, Codex, or other commands in a sandbox provider.
+Provider configuration is not required for the basic DB-native harness if the agent only uses the model, Workspace, Tool Use handlers, and Dynamic Worker bindings. It is required when the agent needs to execute Python, Codex, or other commands in a sandbox provider. In both cases, the Workspace remains the durable source of truth; provider-local files and volumes are temporary execution state unless synced back.
 
 ## Model Configuration
 
@@ -37,7 +40,7 @@ The `model` object in an incoming chat request is preserved as UI metadata; the 
 
 ## Workspace Configuration
 
-The Workspace is the durable state boundary. It stores run inputs/outputs, audit logs, checkpoints, artifacts, and agent state. Provider-local files and volumes are not treated as canonical cross-provider state.
+The Workspace is the durable state boundary. It stores run inputs/outputs, audit logs, checkpoints, artifacts, memory, and agent state. Provider-local files and volumes are not treated as canonical cross-provider state. The harness materializes Workspace files into a sandbox when needed, then syncs or merges the result back so later tasks can continue on another backend.
 
 | Setting | Required | Notes |
 |---------|:--------:|-------|
@@ -89,7 +92,7 @@ The tool denies raw outbound access by default and expects search/fetch behavior
 
 ## Provider Scheduler Configuration
 
-Use provider scheduling when a task needs a sandbox provider. The required input is:
+Use provider scheduling when a task needs a sandbox provider. The scheduler is the bridge between the durable Workspace and interchangeable execution backends. The required input is:
 
 - `workspace`: a `WorkspaceAdapter`
 - `providers`: one or more `SandboxProviderCandidate`

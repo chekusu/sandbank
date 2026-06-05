@@ -15,6 +15,8 @@
 
 > DB-native agent harness = 以数据库为 agent 的 durable workspace 和 capability substrate，以临时 compute capsule 执行模型调用与工具调用。agent 绑定的是 DB workspace protocol，不是虚拟计算空间。
 
+当前 Sandbank 的产品定义已经扩展为统一的 Workspace Agent Harness：DB-native harness 是其中一种后端形态，Dynamic Worker、E2B、BoxLite、Fly.io、Daytona、Cloudflare Workers 等都是可调度的执行 capsule。Workspace protocol 是跨后端的权威状态层，provider scheduler 负责在多个后端沙盒之间 materialize/sync/merge 工作任务。
+
 这和你推文里的直觉一致：过去把基本 op 映射到网络资源，今天更好的抽象是把 op 映射到「数据库内的资源、文件、事务、事件、函数、权限与历史」。SOTA 模型第一层 harness 进步后，虚拟化仍有价值，但不必是 agent identity 的唯一载体。
 
 ## 术语定义
