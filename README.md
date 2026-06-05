@@ -2,7 +2,7 @@
 
 > AI Agent 统一 Workspace Agent Harness — 一个 Workspace，多种后端沙盒。
 
-Sandbank 是面向 AI Agent 的统一 workspace harness。它把 Agent 身份、memory、artifact、audit log、文件和 checkpoint 固化在 `Workspace` 协议里，再把具体执行任务调度到 Dynamic Worker、E2B、BoxLite、Fly.io、Daytona、Cloudflare Workers 等后端沙盒。底层 provider SDK 仍然可单独使用，但 Sandbank 的顶层抽象已经从“统一沙箱接口”升级为“跨后端同步 Workspace 的 Agent Harness”。
+Sandbank 是面向 AI Agent 的统一 workspace harness。它把 Agent 身份、memory、artifact、audit log、文件和 checkpoint 固化在 `Workspace` 协议里，再把具体执行任务调度到 Sandbank Cloud、Dynamic Worker、E2B、BoxLite、Fly.io、Daytona、Cloudflare Workers 等后端沙盒。底层 provider SDK 仍然可单独使用，但 Sandbank 的顶层抽象已经从“统一沙箱接口”升级为“跨后端同步 Workspace 的 Agent Harness”。默认推荐的通用计算后端是 Sandbank Cloud：我们的托管 BoxLite 云服务。
 
 **[官网](https://sandbank.dev)** | **[English](./README.en.md)** | **[日本語](./README.ja.md)**
 
@@ -10,15 +10,17 @@ Sandbank 是面向 AI Agent 的统一 workspace harness。它把 Agent 身份、
 
 ## 为什么选择 Sandbank?
 
-AI Agent 需要的不只是一个隔离沙箱。它需要一个可恢复、可审计、可跨运行时迁移的长期 Workspace，同时还要能按任务选择合适的计算后端：短 JS code mode 可以跑在 Cloudflare Dynamic Worker，Python 可以派发到 E2B 或 BoxLite，长任务可以落到 VM/container，最终输出再同步回同一个 Workspace。
+AI Agent 需要的不只是一个隔离沙箱。它需要一个可恢复、可审计、可跨运行时迁移的长期 Workspace，同时还要能按任务选择合适的计算后端：短 JS code mode 可以跑在 Cloudflare Dynamic Worker，Python、Codex 和 shell 任务默认优先派发到 Sandbank Cloud（托管 BoxLite），特殊场景再切到 E2B、本地 BoxLite、Fly.io 或 VM/container，最终输出同步回同一个 Workspace。
 
 底层沙箱 provider SDK 仍然可用，用来屏蔽 Daytona、Fly.io、Cloudflare Workers 等不同 API：
 
 ```typescript
 import { createProvider } from '@sandbank.dev/core'
-import { DaytonaAdapter } from '@sandbank.dev/daytona'
+import { SandbankCloudAdapter } from '@sandbank.dev/cloud'
 
-const provider = createProvider(new DaytonaAdapter({ apiKey: '...' }))
+const provider = createProvider(new SandbankCloudAdapter({
+  apiToken: process.env.SANDBANK_API_TOKEN,
+}))
 const sandbox = await provider.create({ image: 'node:22' })
 
 const result = await sandbox.exec('echo "Hello from the sandbox"')
@@ -27,7 +29,7 @@ console.log(result.stdout) // Hello from the sandbox
 await provider.destroy(sandbox.id)
 ```
 
-把 `DaytonaAdapter` 换成 `FlyioAdapter` 或 `CloudflareAdapter`，沙箱创建/执行代码无需重写。更高一层的 harness 会把这些 provider 当作计算后端，而不是 Agent 的长期家。
+Sandbank Cloud 是默认推荐 provider；把 `SandbankCloudAdapter` 换成 `DaytonaAdapter`、`FlyioAdapter` 或 `CloudflareAdapter`，沙箱创建/执行代码仍无需重写。更高一层的 harness 会把这些 provider 当作计算后端，而不是 Agent 的长期家。
 
 ## 架构
 
@@ -45,14 +47,14 @@ await provider.destroy(sandbox.id)
 │  @sandbank.dev/agent        沙箱内 Agent 客户端           │
 │  @sandbank.dev/relay        多 Agent 通信中枢             │
 ├──────────────────────────────────────────────────────┤
-│  @sandbank.dev/daytona  @sandbank.dev/flyio  @sandbank.dev/cloudflare  │
-│  @sandbank.dev/boxlite  @sandbank.dev/e2b                 │
+│  @sandbank.dev/cloud    @sandbank.dev/boxlite  @sandbank.dev/e2b       │
+│  @sandbank.dev/daytona  @sandbank.dev/flyio    @sandbank.dev/cloudflare│
 │  Provider 适配器（计算）                               │
 ├──────────────────────────────────────────────────────┤
 │  @sandbank.dev/db9       Service Adapter（数据）       │
 ├──────────────────────────────────────────────────────┤
-│  Daytona    Fly.io Machines    Cloudflare Workers     │
-│  BoxLite (自托管 Docker)    E2B Cloud Sandboxes        │
+│  Sandbank Cloud (托管 BoxLite)    BoxLite (自托管 Docker) │
+│  E2B Cloud Sandboxes    Daytona    Fly.io Machines    Cloudflare Workers │
 │  db9.ai (PostgreSQL)                                  │
 └──────────────────────────────────────────────────────┘
 ```
@@ -65,6 +67,7 @@ await provider.destroy(sandbox.id)
 | [`@sandbank.dev/core`](./packages/core) | 底层 Provider SDK、能力系统、错误类型 |
 | [`@sandbank.dev/skills`](./packages/skills) | Skill 注册表、本地文件系统加载器 |
 | [`@sandbank.dev/workspace`](./packages/workspace) | 持久 Workspace 协议、checkpoint、沙箱 materialize/sync helper |
+| [`@sandbank.dev/cloud`](./packages/cloud) | Sandbank Cloud 托管 BoxLite 云服务适配器，推荐默认 provider，支持 API token 或 x402 付费 |
 | [`@sandbank.dev/daytona`](./packages/daytona) | Daytona 云沙箱适配器 |
 | [`@sandbank.dev/flyio`](./packages/flyio) | Fly.io Machines 适配器 |
 | [`@sandbank.dev/cloudflare`](./packages/cloudflare) | Cloudflare Workers 适配器 |
@@ -80,28 +83,28 @@ await provider.destroy(sandbox.id)
 
 所有 Provider 都必须实现的最小契约：
 
-| 操作 | Daytona | Fly.io | Cloudflare | BoxLite | E2B |
-|------|:-------:|:------:|:----------:|:-------:|:---:|
-| 创建 / 销毁 | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 列出沙箱 | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 执行命令 | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 读写文件 | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Skill 注入 | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 操作 | Sandbank Cloud | Daytona | Fly.io | Cloudflare | BoxLite | E2B |
+|------|:--------------:|:-------:|:------:|:----------:|:-------:|:---:|
+| 创建 / 销毁 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 列出沙箱 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 执行命令 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 读写文件 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Skill 注入 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 ### 扩展能力
 
 能力是可选的。通过 `withVolumes(provider)`、`withPortExpose(sandbox)` 等函数在运行时安全检测并访问。
 
-| 能力 | Daytona | Fly.io | Cloudflare | BoxLite | E2B | db9 | 说明 |
-|------|:-------:|:------:|:----------:|:-------:|:---:|:---:|------|
-| `volumes` | ✅ | ✅ | ⚠️* | ❌ | ⚠️*** | — | 持久卷管理 |
-| `port.expose` | ✅ | ✅ | ⚠️** | ✅ | ✅ | — | 将沙箱端口暴露到公网 |
-| `exec.stream` | ❌ | ❌ | ✅ | ✅ | ❌ | — | 实时流式输出 stdout/stderr |
-| `snapshot` | ❌ | ❌ | ✅ | ✅ | ❌ | — | 沙箱状态快照与恢复 |
-| `terminal` | ✅ | ✅ | ✅ | ✅ | ✅ | — | 交互式 Web 终端 (ttyd) |
-| `sleep` | ❌ | ❌ | ❌ | ✅ | ✅ | — | 休眠与唤醒 |
-| `skills` | ✅ | ✅ | ✅ | ✅ | ✅ | — | 加载并注入 Skill 定义到沙箱 |
-| `services` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | 将数据服务 (PostgreSQL) 绑定到沙箱 |
+| 能力 | Sandbank Cloud | Daytona | Fly.io | Cloudflare | BoxLite | E2B | db9 | 说明 |
+|------|:--------------:|:-------:|:------:|:----------:|:-------:|:---:|:---:|------|
+| `volumes` | ❌ | ✅ | ✅ | ⚠️* | ❌ | ⚠️*** | — | 持久卷管理 |
+| `port.expose` | ✅ | ✅ | ✅ | ⚠️** | ✅ | ✅ | — | 将沙箱端口暴露到公网 |
+| `exec.stream` | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | — | 实时流式输出 stdout/stderr |
+| `snapshot` | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | — | 沙箱状态快照与恢复 |
+| `terminal` | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | — | 交互式 Web 终端 (ttyd) |
+| `sleep` | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | — | 休眠与唤醒 |
+| `skills` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | 加载并注入 Skill 定义到沙箱 |
+| `services` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | 将数据服务 (PostgreSQL) 绑定到沙箱 |
 
 \* Cloudflare 的 `volumes` 需要在适配器配置中启用 `storage` 选项。
 
@@ -111,13 +114,14 @@ await provider.destroy(sandbox.id)
 
 ### Provider 特性对比
 
-| | Daytona | Fly.io | Cloudflare | BoxLite | E2B |
-|---|---------|--------|------------|---------|-----|
-| **运行时** | 完整 VM | Firecracker 微虚拟机 | V8 隔离 + 容器 | Docker 容器 | E2B 云沙箱 |
-| **冷启动** | ~10s | ~3-5s | ~1s | ~2-5s | Provider 管理 |
-| **文件 I/O** | 原生 SDK | 通过 exec (base64) | 原生 SDK | 通过 exec (base64) | 原生 SDK |
-| **区域** | 多区域 | 多区域 | 全球边缘 | 自托管 | E2B 管理 |
-| **外部依赖** | `@daytonaio/sdk` | 无 (纯 fetch) | `@cloudflare/sandbox` | BoxLite API | `e2b` |
+| | Sandbank Cloud | Daytona | Fly.io | Cloudflare | BoxLite | E2B |
+|---|----------------|---------|--------|------------|---------|-----|
+| **定位** | 推荐默认 provider | 云沙箱 | VM/microVM | 边缘 Worker | 自托管 BoxLite | 云沙箱 |
+| **运行时** | 托管 BoxLite 容器 | 完整 VM | Firecracker 微虚拟机 | V8 隔离 + 容器 | Docker 容器 | E2B 云沙箱 |
+| **冷启动** | 托管服务优化 | ~10s | ~3-5s | ~1s | ~2-5s | Provider 管理 |
+| **文件 I/O** | Archive API | 原生 SDK | 通过 exec (base64) | 原生 SDK | 通过 exec (base64) | 原生 SDK |
+| **区域** | Sandbank 管理 | 多区域 | 多区域 | 全球边缘 | 自托管 | E2B 管理 |
+| **外部依赖** | `@sandbank.dev/cloud` + API token/x402 | `@daytonaio/sdk` | 无 (纯 fetch) | `@cloudflare/sandbox` | BoxLite API | `e2b` |
 
 ## 多 Agent 会话
 
@@ -169,7 +173,7 @@ await session.complete({ status: 'success', summary: '完成了 5 个 API 端点
 
 ## Workspace Agent Harness
 
-Sandbank 的 harness 以 `WorkspaceAdapter` 为 Agent 的权威状态边界。一次 agent run 可以先让模型规划，再用 Dynamic Worker 执行受限 JS code mode，把生成的 Python 写入 Workspace，随后由 provider scheduler 选择 E2B、BoxLite、Daytona、Fly.io 或其他声明 `runtime.python` 的后端执行，最后把产物、日志和 memory 写回 Workspace。
+Sandbank 的 harness 以 `WorkspaceAdapter` 为 Agent 的权威状态边界。一次 agent run 可以先让模型规划，再用 Dynamic Worker 执行受限 JS code mode，把生成的 Python 写入 Workspace，随后由 provider scheduler 优先选择 Sandbank Cloud，或按策略切换到 E2B、BoxLite、Daytona、Fly.io 等声明 `runtime.python` 的后端执行，最后把产物、日志和 memory 写回 Workspace。
 
 这种结构让调用方可以替换计算后端，而不用把 Agent 的长期状态绑在某个 VM、container、volume 或 Workers storage binding 上。权限边界也在 harness 层统一处理：Tool Use 请求先经过 Agent policy/resource grants/approval rules，再调用宿主注册的工具或调度 sandbox provider。
 
@@ -218,6 +222,7 @@ import {
 const taskConfig = {
   workspace,
   providers: [
+    { provider: sandbankCloudProvider, capabilities: ['runtime.python', 'codex.exec'], priority: 30 },
     { provider: e2bProvider, capabilities: ['runtime.python'], priority: 10 },
     { provider: boxliteProvider, capabilities: ['runtime.python'] },
   ],
@@ -225,6 +230,7 @@ const taskConfig = {
   imageCatalog: {
     'python-agent': {
       default: 'python:3.12',
+      'sandbank-cloud': 'python:3.12-slim',
       e2b: 'e2b-python-template',
       boxlite: 'python:3.12-slim',
     },
@@ -279,6 +285,7 @@ const supervisor = new AgentSupervisor({
     registry,
     dynamicWorker,
     sandboxProviders: [
+      { provider: sandbankCloudProvider, capabilities: ['runtime.python', 'codex.exec'] },
       { provider: e2bProvider, capabilities: ['runtime.python'] },
       { provider: boxliteProvider, capabilities: ['runtime.python'] },
     ],
@@ -291,6 +298,7 @@ const supervisor = new AgentSupervisor({
         { kind: 'external.search', id: 'perplexity', actions: ['query'] },
         { kind: 'http.egress', id: 'api.example.com', actions: ['fetch'] },
         { kind: 'workspace.path', scope: '/runs', actions: ['write'] },
+        { kind: 'sandbox.provider', id: 'sandbank-cloud', actions: ['execute'] },
         { kind: 'sandbox.provider', id: 'e2b', actions: ['execute'] },
         { kind: 'runtime.python', actions: ['execute'] },
       ],
@@ -309,19 +317,21 @@ Tool 注册目前由第三方宿主代码完成：调用方在初始化 harness/
 ## 快速开始
 
 ```bash
-# 安装
-pnpm add @sandbank.dev/core @sandbank.dev/daytona  # 或 @sandbank.dev/flyio、@sandbank.dev/cloudflare、@sandbank.dev/e2b
+# 安装推荐 provider
+pnpm add @sandbank.dev/core @sandbank.dev/cloud
 
 # 配置 Provider
-export DAYTONA_API_KEY=your-key
+export SANDBANK_API_TOKEN=your-key
+# 或使用 x402 按次付费
+export WALLET_PRIVATE_KEY=0x...
 ```
 
 ```typescript
 import { createProvider } from '@sandbank.dev/core'
-import { DaytonaAdapter } from '@sandbank.dev/daytona'
+import { SandbankCloudAdapter } from '@sandbank.dev/cloud'
 
 const provider = createProvider(
-  new DaytonaAdapter({ apiKey: process.env.DAYTONA_API_KEY! })
+  new SandbankCloudAdapter({ apiToken: process.env.SANDBANK_API_TOKEN })
 )
 
 // 创建沙箱
@@ -399,6 +409,9 @@ benchmark 会把每个 case POST 到 `/api/db-native-agent-harness/stream`，记
 集成测试会调用真实 API，通过环境变量控制开关：
 
 ```bash
+# Sandbank Cloud（推荐默认 provider）
+SANDBANK_API_TOKEN=... pnpm test
+
 # Daytona
 DAYTONA_API_KEY=... pnpm test
 

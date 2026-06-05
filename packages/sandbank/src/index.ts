@@ -6,6 +6,7 @@
  * Tool Use, memory, and provider scheduler layers.
  * For provider adapters, install them separately:
  *
+ *   pnpm add sandbank @sandbank.dev/cloud
  *   pnpm add sandbank @sandbank.dev/daytona
  *   pnpm add sandbank @sandbank.dev/flyio
  *   pnpm add sandbank @sandbank.dev/cloudflare

@@ -1,8 +1,8 @@
 # @sandbank.dev/cloud
 
-> Sandbank Cloud adapter for [Sandbank](../../README.md) with built-in x402 payment support.
+> Sandbank Cloud provider adapter for [Sandbank](../../README.md) with hosted BoxLite execution and built-in x402 payment support.
 
-Connect to [Sandbank Cloud](https://sandbank.dev/cloud) — managed bare-metal KVM sandboxes with sub-second start times. Pay per sandbox with USDC via the x402 payment protocol, or use an API token for authenticated access.
+Connect to [Sandbank Cloud](https://sandbank.dev/cloud), Sandbank's hosted BoxLite cloud service. It is the recommended default provider for general-purpose agent execution: Python, Codex, shell, workspace materialization, archive sync, and port exposure all go through the same provider interface. Pay per sandbox with USDC via the x402 payment protocol, or use an API token for authenticated access.
 
 ## Install
 
@@ -11,6 +11,8 @@ pnpm add @sandbank.dev/core @sandbank.dev/cloud
 ```
 
 ## Usage
+
+Sandbank Cloud uses the provider name `sandbank-cloud`. Give it the highest scheduler priority when you want the harness to prefer the hosted BoxLite backend.
 
 ### x402 Payment (pay-per-use)
 

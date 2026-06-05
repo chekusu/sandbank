@@ -21,6 +21,8 @@
 
 如果 DB-native harness 只使用模型、Workspace、Tool Use handler 和 Dynamic Worker binding，则不需要配置 sandbox provider。只有当 Agent 需要在 provider 中运行 Python、Codex 或其他命令时，provider 配置才是必须的。无论哪种路径，Workspace 都是权威状态；provider 本地文件和 volume 只是临时执行状态，除非被同步回 Workspace。
 
+通用 sandbox 执行默认推荐 Sandbank Cloud。Sandbank Cloud 是 Sandbank 运营的托管 BoxLite provider；只有当你需要特定外部后端、自托管 BoxLite，或某个 provider-specific 能力时，才优先选择其他 provider。
+
 ## 模型配置
 
 harness 当前使用 DeepSeek-compatible chat completions API。
@@ -103,6 +105,7 @@ Tool 注册由宿主应用控制，不由任意终端用户动态注册。第三
 
 ```typescript
 import { createProvider } from '@sandbank.dev/core'
+import { SandbankCloudAdapter } from '@sandbank.dev/cloud'
 import { E2BAdapter } from '@sandbank.dev/e2b'
 import { DaytonaAdapter } from '@sandbank.dev/daytona'
 import { MemoryWorkspaceAdapter } from '@sandbank.dev/workspace'
@@ -114,6 +117,11 @@ import {
 const workspace = new MemoryWorkspaceAdapter()
 
 const providers = [
+  {
+    provider: createProvider(new SandbankCloudAdapter({ apiToken: process.env.SANDBANK_API_TOKEN })),
+    capabilities: ['runtime.python', 'runtime.codex', 'codex.exec', 'codex.goal'],
+    priority: 30,
+  },
   {
     provider: createProvider(new E2BAdapter({ apiKey: process.env.E2B_API_KEY })),
     capabilities: ['runtime.python'],
@@ -130,6 +138,7 @@ const imageCatalog = {
   'python-agent': {
     default: 'ghcr.io/acme/python-agent:2026.06',
     providers: {
+      'sandbank-cloud': 'python:3.12-slim',
       e2b: 'python-agent-e2b-template',
     },
   },
@@ -168,6 +177,7 @@ await runWorkspaceSandboxTask({
 
 | Provider | 常见必须配置 |
 |----------|--------------|
+| Sandbank Cloud | `SANDBANK_API_TOKEN` 用于认证访问，或 `WALLET_PRIVATE_KEY` 用于 x402 按次付费；可选 `SANDBANK_CLOUD_URL` |
 | Daytona | `DAYTONA_API_KEY`；可选 `DAYTONA_API_URL` |
 | Fly.io | `FLY_API_TOKEN`、`FLY_APP_NAME`；可选 `FLY_REGION` |
 | Cloudflare | Worker Durable Object binding，例如 `env.SANDBOX`；volume 需要可选 storage config |

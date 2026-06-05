@@ -21,6 +21,8 @@
 
 Agent がモデル、Workspace、Tool Use handler、Dynamic Worker binding だけを使う基本的な DB-native harness では、sandbox provider の設定は不要です。Python、Codex、その他のコマンドを provider 内で実行する場合に provider 設定が必要になります。どちらの場合も Workspace が正準状態であり、provider local file や volume は Workspace に同期されない限り一時的な実行状態です。
 
+汎用 sandbox 実行では Sandbank Cloud を最初に選ぶことを推奨します。Sandbank Cloud は Sandbank が運用する hosted BoxLite provider です。特定の外部 backend、自ホスト BoxLite、または provider-specific capability が必要な場合に他の provider を選びます。
+
 ## モデル設定
 
 harness は現在 DeepSeek-compatible chat completions API を使用します。
@@ -103,6 +105,7 @@ Tool 登録は host application が制御します。任意の end user が runt
 
 ```typescript
 import { createProvider } from '@sandbank.dev/core'
+import { SandbankCloudAdapter } from '@sandbank.dev/cloud'
 import { E2BAdapter } from '@sandbank.dev/e2b'
 import { DaytonaAdapter } from '@sandbank.dev/daytona'
 import { MemoryWorkspaceAdapter } from '@sandbank.dev/workspace'
@@ -114,6 +117,11 @@ import {
 const workspace = new MemoryWorkspaceAdapter()
 
 const providers = [
+  {
+    provider: createProvider(new SandbankCloudAdapter({ apiToken: process.env.SANDBANK_API_TOKEN })),
+    capabilities: ['runtime.python', 'runtime.codex', 'codex.exec', 'codex.goal'],
+    priority: 30,
+  },
   {
     provider: createProvider(new E2BAdapter({ apiKey: process.env.E2B_API_KEY })),
     capabilities: ['runtime.python'],
@@ -130,6 +138,7 @@ const imageCatalog = {
   'python-agent': {
     default: 'ghcr.io/acme/python-agent:2026.06',
     providers: {
+      'sandbank-cloud': 'python:3.12-slim',
       e2b: 'python-agent-e2b-template',
     },
   },
@@ -168,6 +177,7 @@ await runWorkspaceSandboxTask({
 
 | Provider | 一般的な必須設定 |
 |----------|------------------|
+| Sandbank Cloud | 認証アクセスには `SANDBANK_API_TOKEN`、x402 pay-per-use には `WALLET_PRIVATE_KEY`。任意で `SANDBANK_CLOUD_URL` |
 | Daytona | `DAYTONA_API_KEY`。任意で `DAYTONA_API_URL` |
 | Fly.io | `FLY_API_TOKEN`、`FLY_APP_NAME`。任意で `FLY_REGION` |
 | Cloudflare | `env.SANDBOX` などの Worker Durable Object binding。volume には任意の storage config |

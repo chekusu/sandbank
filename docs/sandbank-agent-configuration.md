@@ -21,6 +21,8 @@ The main execution roles are:
 
 Provider configuration is not required for the basic DB-native harness if the agent only uses the model, Workspace, Tool Use handlers, and Dynamic Worker bindings. It is required when the agent needs to execute Python, Codex, or other commands in a sandbox provider. In both cases, the Workspace remains the durable source of truth; provider-local files and volumes are temporary execution state unless synced back.
 
+For general-purpose sandbox execution, prefer Sandbank Cloud first. Sandbank Cloud is the hosted BoxLite provider operated by Sandbank; use the other providers when you need a specific external backend, a self-hosted BoxLite deployment, or provider-specific capabilities.
+
 ## Model Configuration
 
 The harness currently uses a DeepSeek-compatible chat completions API.
@@ -103,6 +105,7 @@ Use provider scheduling when a task needs a sandbox provider. The scheduler is t
 
 ```typescript
 import { createProvider } from '@sandbank.dev/core'
+import { SandbankCloudAdapter } from '@sandbank.dev/cloud'
 import { E2BAdapter } from '@sandbank.dev/e2b'
 import { DaytonaAdapter } from '@sandbank.dev/daytona'
 import { MemoryWorkspaceAdapter } from '@sandbank.dev/workspace'
@@ -114,6 +117,11 @@ import {
 const workspace = new MemoryWorkspaceAdapter()
 
 const providers = [
+  {
+    provider: createProvider(new SandbankCloudAdapter({ apiToken: process.env.SANDBANK_API_TOKEN })),
+    capabilities: ['runtime.python', 'runtime.codex', 'codex.exec', 'codex.goal'],
+    priority: 30,
+  },
   {
     provider: createProvider(new E2BAdapter({ apiKey: process.env.E2B_API_KEY })),
     capabilities: ['runtime.python'],
@@ -130,6 +138,7 @@ const imageCatalog = {
   'python-agent': {
     default: 'ghcr.io/acme/python-agent:2026.06',
     providers: {
+      'sandbank-cloud': 'python:3.12-slim',
       e2b: 'python-agent-e2b-template',
     },
   },
@@ -168,6 +177,7 @@ await runWorkspaceSandboxTask({
 
 | Provider | Typical required configuration |
 |----------|--------------------------------|
+| Sandbank Cloud | `SANDBANK_API_TOKEN` for authenticated access, or `WALLET_PRIVATE_KEY` for x402 pay-per-use; optional `SANDBANK_CLOUD_URL` |
 | Daytona | `DAYTONA_API_KEY`; optional `DAYTONA_API_URL` |
 | Fly.io | `FLY_API_TOKEN`, `FLY_APP_NAME`; optional `FLY_REGION` |
 | Cloudflare | Worker Durable Object binding such as `env.SANDBOX`; optional storage config for volumes |

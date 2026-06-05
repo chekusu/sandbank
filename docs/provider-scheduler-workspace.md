@@ -2,6 +2,8 @@
 
 Sandbank is a workspace-native agent harness, not only a sandbox SDK. It treats `WorkspaceAdapter` as the durable source of truth for agent state, then uses sandbox providers as interchangeable execution backends. A provider may have a VM, container, Dynamic Worker, snapshot, volume, or terminal, but those resources are execution capsules rather than the canonical state boundary.
 
+For general-purpose execution, prefer Sandbank Cloud. It is Sandbank's hosted BoxLite cloud service and is exposed through the `sandbank-cloud` provider name via `@sandbank.dev/cloud`. Use self-hosted BoxLite when you need local control, and use E2B/Daytona/Fly.io/Cloudflare when a task requires those provider-specific capabilities.
+
 For model, Workspace, provider, and image/runtime setup, see [Sandbank Agent Configuration](./sandbank-agent-configuration.md).
 
 ## Execution Model
@@ -16,7 +18,7 @@ The scheduler added in `packages/sandbank/src/provider-scheduler.ts` is the mech
 6. Sync or merge sandbox output back into the workspace.
 7. Create an after-run checkpoint when supported.
 
-This means a Dynamic Worker can generate Python into `/workspace/generated/task.py`, while the scheduler can dispatch that Python file to an E2B, Daytona, BoxLite, or other provider candidate that declares `runtime.python`. The next task can choose a different backend and still see the same canonical Workspace after sync or merge.
+This means a Dynamic Worker can generate Python into `/workspace/generated/task.py`, while the scheduler can dispatch that Python file to Sandbank Cloud first, or to E2B, Daytona, BoxLite, or another provider candidate that declares `runtime.python`. The next task can choose a different backend and still see the same canonical Workspace after sync or merge.
 
 ## Preflight
 
@@ -46,7 +48,7 @@ A provider can satisfy `workspace.live` by running a Sandbank workspace client, 
 
 ## Images
 
-Developers should use logical images such as `python-agent` or `codex-agent`, then map them per provider with the image catalog. This lets the same task request a consistent runtime while each provider uses its own template, OCI image, or local image file.
+Developers should use logical images such as `python-agent` or `codex-agent`, then map them per provider with the image catalog. Prefer a `sandbank-cloud` mapping for the default route, then add provider-specific mappings for E2B templates, Daytona/Fly.io images, or local BoxLite OCI images. This lets the same task request a consistent runtime while each provider uses its own template, OCI image, or local image file.
 
 A Codex-capable image should contain at least:
 

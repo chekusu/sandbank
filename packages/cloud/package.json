@@ -1,7 +1,7 @@
 {
   "name": "@sandbank.dev/cloud",
   "version": "0.2.0",
-  "description": "Sandbank Cloud adapter with x402 payment support",
+  "description": "Sandbank Cloud hosted BoxLite provider adapter with x402 payment support",
   "license": "MIT",
   "type": "module",
   "homepage": "https://sandbank.dev/cloud",
@@ -14,8 +14,8 @@
     "sandbox",
     "ai-agent",
     "sandbank-cloud",
-    "bare-metal",
-    "kvm",
+    "boxlite",
+    "provider",
     "x402",
     "usdc"
   ],
