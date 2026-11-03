@@ -71,6 +71,10 @@ jobs:
         run: npm publish --provenance --access public || true
         working-directory: packages/relay
 
+      - name: Publish @sandbank.dev/devices
+        run: npm publish --provenance --access public || true
+        working-directory: packages/devices
+
       # Layer 2: depend on core
       - name: Publish @sandbank.dev/agent
         run: npm publish --provenance --access public || true

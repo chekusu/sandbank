@@ -1,0 +1,55 @@
+{
+  "name": "@sandbank.dev/devices",
+  "version": "0.1.0",
+  "description": "Cloud desktop, browser and phone for AI assistants: Sandbank Cloud /v2 sessions client and framework-neutral tools, with Pi and OpenAI adapters",
+  "license": "MIT",
+  "type": "module",
+  "homepage": "https://sandbank.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chekusu/sandbank.git",
+    "directory": "packages/devices"
+  },
+  "keywords": [
+    "ai-agent",
+    "computer-use",
+    "browser-use",
+    "phone-use",
+    "sandbank-cloud",
+    "cloudflare-workers"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./pi": {
+      "types": "./dist/pi.d.ts",
+      "import": "./dist/pi.js"
+    },
+    "./openai": {
+      "types": "./dist/openai.d.ts",
+      "import": "./dist/openai.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": ">=1.4.0"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-ai": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "1.4.0",
+    "typescript": "^5.7.3"
+  }
+}
