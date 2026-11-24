@@ -8,7 +8,7 @@ import { toPiTool } from '../src/pi.js'
 type Call = { method: string; path: string; body: Record<string, unknown> | undefined; auth: string | null }
 
 /** A small in-memory /v2 server. */
-function fakeV2(options: { bootPolls?: number; takeoverActive?: boolean; actStatus?: number; execStatus?: number } = {}) {
+function fakeV2(options: { bootPolls?: number; takeoverActive?: boolean; actCode?: string; actStatus?: number; execStatus?: number } = {}) {
   const calls: Call[] = []
   const sessions = new Map<string, { id: string; kind: string; owner: string; state: string; polls: number }>()
   let takeover = options.takeoverActive ?? false
@@ -55,7 +55,7 @@ function fakeV2(options: { bootPolls?: number; takeoverActive?: boolean; actStat
     if (sub === 'ui') return reply(200, { tree: '[e1] Button "OK" (10,10)', width: 960, height: 2000 })
     if (sub === 'act') {
       if (takeover) return reply(409, { error: 'the user has this device', code: 'takeover' })
-      if (options.actStatus) return reply(options.actStatus, { ok: false, error: 'no such element' })
+      if (options.actStatus) return reply(options.actStatus, { ok: false, error: 'no such element', code: options.actCode })
       return reply(200, { ok: true })
     }
     if (sub === 'exec') {
@@ -167,6 +167,12 @@ describe('phone tool', () => {
     const result = await createPhoneTool(client(server)).execute({ action: 'tap', args: { x: 1, y: 1 } }, { owner: 'u' })
     expect(result.isError).toBe(true)
     expect((result.content[0] as { text: string }).text).toContain('handed_off')
+  })
+
+  it('reports a stopped session without waiting for a handoff', async () => {
+    const server = fakeV2({ actStatus: 409, actCode: 'not_running' })
+    const result = await createPhoneTool(client(server)).execute({ action: 'tap', args: { x: 1, y: 1 } }, { owner: 'u' })
+    expect(JSON.parse((result.content[0] as { text: string }).text).status).toBe('not_running')
   })
 
   it('reports a failed step and an unknown action as errors', async () => {

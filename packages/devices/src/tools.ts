@@ -243,10 +243,13 @@ function createStepTool(client: SandbankDevices, spec: StepToolSpec, options: De
           if (done.ok === false) return json({ status: 'error', error: done.error ?? 'the step failed' }, true)
         } catch (error) {
           if (error instanceof DeviceApiError && error.status === 409) {
-            if (error.code === 'booting' || /boot/i.test(error.message)) {
+            if (error.code === 'booting' || (!error.code && /boot/i.test(error.message))) {
               return json({ status: 'booting', note: `The ${label} is still starting; tell the user, then try again in a moment.` })
             }
-            return json({ status: 'handed_off', error: `The user has the ${spec.kind === 'desktop' ? 'computer' : spec.kind} right now; wait until they hand it back.` }, true)
+            if (error.code === 'takeover_active' || error.code === 'takeover') {
+              return json({ status: 'handed_off', error: `The user has the ${spec.kind === 'desktop' ? 'computer' : spec.kind} right now; wait until they hand it back.` }, true)
+            }
+            return json({ status: error.code ?? 'error', error: error.message }, true)
           }
           if (error instanceof DeviceApiError && (error.status === 400 || error.status === 422)) {
             return json({ status: 'error', error: error.message }, true)
