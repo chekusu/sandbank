@@ -6,6 +6,9 @@ on:
 
 jobs:
   publish:
+    # Stays on a GitHub-hosted runner: `npm publish --provenance` only works on
+    # GitHub-hosted runners (npm refuses provenance when RUNNER_ENVIRONMENT is
+    # self-hosted). Tag-triggered only, so it uses very few minutes.
     runs-on: ubuntu-latest
     permissions:
       contents: write
